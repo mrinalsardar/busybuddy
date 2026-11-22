@@ -469,12 +469,15 @@ begin
     set stock_qty = v.stock_qty + new.delta
     where v.id = new.variant_id and v.product_id = new.product_id
     returning v.id, v.stock_qty into v_variant, v_stock;
-  elsif not exists (select 1 from product_variant v where v.product_id = new.product_id) then
-    update product p
-    set stock_qty = p.stock_qty + new.delta,
-        updated_at = to_db_time(now())
-    where p.id = new.product_id
-    returning p.stock_qty into v_stock;
+  else
+    perform 1 from product p where p.id = new.product_id for no key update;
+    if not exists (select 1 from product_variant v where v.product_id = new.product_id) then
+      update product p
+      set stock_qty = p.stock_qty + new.delta,
+          updated_at = to_db_time(now())
+      where p.id = new.product_id
+      returning p.stock_qty into v_stock;
+    end if;
   end if;
 
   select s.id into v_sale from sale s
