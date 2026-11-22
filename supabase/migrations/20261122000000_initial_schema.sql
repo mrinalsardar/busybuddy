@@ -173,7 +173,8 @@ create table public.stock_alert (
   id text primary key default gen_random_uuid()::text,
   profile_id text not null references public.business_profile (id) on delete cascade,
   product_id text not null,
-  -- Set when the variant's stock went negative; null for a product.
+  -- Set when the variant's stock went negative; null for a product, or for a
+  -- line that changed no stock.
   variant_id text,
   sale_id text not null,
   stock_after bigint not null,
