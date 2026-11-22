@@ -1,8 +1,9 @@
--- record_sale: relative stock decrement, idempotent retry, oversell alerts,
--- and a variant product's stock staying the sum of its variants.
+-- record_sale: relative stock decrement through 'sale' stock movements,
+-- idempotent retry, oversell alerts, and a variant product's stock staying the
+-- sum of its variants.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(42);
+select plan(46);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'owner-a@example.com'),
@@ -13,24 +14,29 @@ set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-0000-0000-000000000001"}';
 do $$ begin
   perform create_shop('{"id":"shop-b","name":"Shop B","type":"general","allow_oversell":1}');
 end $$;
-insert into product (id, profile_id, name, stock_qty) values ('pb1', 'shop-b', 'Pen', 1);
+insert into product (id, profile_id, name) values ('pb1', 'shop-b', 'Pen');
 insert into product (id, profile_id, name) values ('pb2', 'shop-b', 'Shirt');
-insert into product_variant (id, product_id, profile_id, size, stock_qty) values ('vb1', 'pb2', 'shop-b', 'M', 2);
+insert into product_variant (id, product_id, profile_id, size) values ('vb1', 'pb2', 'shop-b', 'M');
+insert into stock_movement (id, profile_id, product_id, variant_id, delta, reason) values
+  ('mb1', 'shop-b', 'pb1', null, 1, 'initial'), ('mb2', 'shop-b', 'pb2', 'vb1', 2, 'initial');
 insert into customer (id, profile_id, name) values ('cb1', 'shop-b', 'Bea');
 
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-000000000001"}';
 do $$ begin
   perform create_shop('{"id":"shop-a","name":"Shop A","type":"shoes","variant_support":1}');
 end $$;
-insert into product (id, profile_id, name, stock_qty) values ('p1', 'shop-a', 'Socks', 10);
--- A product with variants: inserted with a stale total, which the variants'
--- inserts replace with their sum (3 + 2).
-insert into product (id, profile_id, name, stock_qty) values ('p2', 'shop-a', 'Sneaker', 99);
-insert into product_variant (id, product_id, profile_id, size, stock_qty) values
-  ('v1', 'p2', 'shop-a', '42', 3),
-  ('v2', 'p2', 'shop-a', '43', 2);
+insert into product (id, profile_id, name) values ('p1', 'shop-a', 'Socks');
+-- A product with variants: the total is their sum (3 + 2).
+insert into product (id, profile_id, name) values ('p2', 'shop-a', 'Sneaker');
+insert into product_variant (id, product_id, profile_id, size) values
+  ('v1', 'p2', 'shop-a', '42'),
+  ('v2', 'p2', 'shop-a', '43');
+insert into stock_movement (id, profile_id, product_id, variant_id, delta, reason) values
+  ('m1', 'shop-a', 'p1', null, 10, 'initial'),
+  ('m2', 'shop-a', 'p2', 'v1', 3, 'initial'),
+  ('m3', 'shop-a', 'p2', 'v2', 2, 'initial');
 select is((select stock_qty from product where id = 'p2'), 5::bigint,
-  'inserting variants sets the product total to their sum');
+  'initial movements of the variants set the product total to their sum');
 insert into customer (id, profile_id, name) values ('ca1', 'shop-a', 'Asha');
 
 -- Two sales of the same product, recorded by two devices.
@@ -41,6 +47,10 @@ select is(
   '{"sale_id":"s1","duplicate":false,"stock_alerts":0}'::jsonb,
   'first sale is recorded');
 select is((select stock_qty from product where id = 'p1'), 7::bigint, 'first sale takes 3 off stock');
+select results_eq(
+  $$select id, product_id, delta, reason, sale_id from stock_movement where sale_id = 's1'$$,
+  $$values ('sale:s1i1'::text, 'p1'::text, -3::bigint, 'sale'::text, 's1'::text)$$,
+  'the sale is recorded as one stock movement per item');
 select is(
   record_sale(
     '{"id":"s2","profile_id":"shop-a","total_minor":400}',
@@ -63,6 +73,18 @@ select is(
 select is((select stock_qty from product where id = 'p1'), 3::bigint, 'retry does not decrement again');
 select is((select count(*)::int from sale_item where sale_id = 's1'), 1, 'retry adds no items');
 select is((select count(*)::int from sale), 2, 'retry adds no sale');
+select is((select count(*)::int from stock_movement where sale_id = 's1'), 1, 'retry adds no movement');
+
+-- A sale movement the device already uploaded under the item's id is not
+-- applied a second time by record_sale.
+insert into stock_movement (id, profile_id, product_id, delta, reason)
+  values ('sale:s13i1', 'shop-a', 'p1', -1, 'sale');
+select is((select stock_qty from product where id = 'p1'), 2::bigint, 'the uploaded movement is applied');
+do $$ begin
+  perform record_sale('{"id":"s13","profile_id":"shop-a"}',
+    '[{"id":"s13i1","product_id":"p1","product_name":"Socks","qty":1}]');
+end $$;
+select is((select stock_qty from product where id = 'p1'), 2::bigint, '... and not again by record_sale');
 
 -- Variant sale decrements the variant and the product total.
 select lives_ok($$select record_sale(
@@ -79,11 +101,11 @@ select is(
     '[{"id":"s4i1","product_id":"p1","product_name":"Socks","qty":2},
       {"id":"s4i2","product_id":"p1","product_name":"Socks","qty":3}]') ->> 'stock_alerts',
   '1', 'oversell is accepted with one alert');
-select is((select stock_qty from product where id = 'p1'), -2::bigint,
+select is((select stock_qty from product where id = 'p1'), -3::bigint,
   'two lines of one product are both decremented');
 select results_eq(
   $$select product_id, variant_id, sale_id, stock_after from stock_alert where sale_id = 's4'$$,
-  $$values ('p1'::text, null::text, 's4'::text, -2::bigint)$$,
+  $$values ('p1'::text, null::text, 's4'::text, -3::bigint)$$,
   'alert records the product and stock after the sale');
 
 -- Variant oversell: the variant goes negative, the product total does not.
@@ -116,12 +138,14 @@ select is(
 select is((select customer_id from sale where id = 's7'), null, 'missing customer is stored as null');
 select is((select variant_id from sale_item where id = 's7i1'), null,
   'variant of another product is stored as null');
-select is((select stock_qty from product where id = 'p1'), -3::bigint,
+select is((select stock_qty from product where id = 'p1'), -4::bigint,
   'the product without variants is still decremented');
 select is((select stock_qty from product_variant where id = 'v1'), 1::bigint, 'the other product''s variant is untouched');
 
 -- Variants added and removed with stock: the total follows (0 + 4, then 0).
-insert into product_variant (id, product_id, profile_id, size, stock_qty) values ('v3', 'p2', 'shop-a', '44', 4);
+insert into product_variant (id, product_id, profile_id, size) values ('v3', 'p2', 'shop-a', '44');
+insert into stock_movement (id, profile_id, product_id, variant_id, delta, reason)
+  values ('m4', 'shop-a', 'p2', 'v3', 4, 'initial');
 select is((select stock_qty from product where id = 'p2'), 4::bigint, 'a new variant''s stock is added to the total');
 delete from product_variant where id = 'v3';
 select is((select stock_qty from product where id = 'p2'), 0::bigint, 'a deleted variant''s stock leaves the total');

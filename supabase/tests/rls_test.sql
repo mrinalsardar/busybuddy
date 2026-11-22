@@ -2,7 +2,7 @@
 -- the profile, membership and invites are not directly writable.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(23);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'owner-a@example.com'),
@@ -13,7 +13,8 @@ insert into auth.users (id, email) values
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-000000000001"}';
 do $$ begin perform create_shop('{"id":"shop-a","name":"Shop A","type":"grocery"}'); end $$;
-insert into product (id, profile_id, name, stock_qty) values ('pa1', 'shop-a', 'Rice', 10);
+insert into product (id, profile_id, name) values ('pa1', 'shop-a', 'Rice');
+insert into stock_movement (id, profile_id, product_id, delta, reason) values ('ma1', 'shop-a', 'pa1', 10, 'initial');
 insert into customer (id, profile_id, name) values ('ca1', 'shop-a', 'Asha');
 insert into expense (id, profile_id, amount_minor, date) values ('ea1', 'shop-a', 500, '2026-11-22');
 insert into supplier (id, profile_id, name) values ('sa1', 'shop-a', 'Wholesale A');
@@ -51,12 +52,16 @@ select throws_ok(
   $$select record_sale('{"id":"sx","profile_id":"shop-a"}', '[]')$$,
   '42501', null, 'B cannot record a sale in shop A');
 select throws_ok(
-  $$select adjust_stock('pa1', null, 100)$$,
-  'P0002', null, 'B cannot adjust A''s stock');
+  $$insert into stock_movement (id, profile_id, product_id, delta, reason)
+    values ('mx', 'shop-a', 'pa1', 100, 'restock')$$,
+  '42501', null, 'B cannot add a stock movement to shop A');
+insert into stock_movement (id, profile_id, product_id, delta, reason) values ('mb1', 'shop-b', 'pa1', 100, 'restock');
+select is_empty('select 1 from stock_movement where profile_id = ''shop-a''', 'B sees no stock movements of shop A');
 
 -- Owner A still sees its own data untouched.
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-000000000001"}';
-select results_eq('select id, name from product', $$values ('pa1', 'Rice')$$, 'A''s product is intact');
+select results_eq('select id, name, stock_qty from product', $$values ('pa1', 'Rice', 10::bigint)$$,
+  'A''s product and stock are intact');
 select results_eq('select count(*)::int from customer', array[1], 'A''s customer is intact');
 
 -- Staff of shop A reads and writes shop data but not the profile.
