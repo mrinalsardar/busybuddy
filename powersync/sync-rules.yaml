@@ -1,0 +1,22 @@
+# PowerSync sync rules for BusyBuddy.
+#
+# One bucket per shop: a device receives every shop its signed-in user is a
+# member of (shop_member), and each synced table's rows for that shop.
+# Tables are replicated from the `powersync` publication created in
+# supabase/migrations. shop_invite is not synced (reached only through the
+# create_invite / join_shop functions).
+bucket_definitions:
+  shop:
+    parameters: select profile_id from shop_member where user_id = request.user_id()
+    data:
+      - select * from business_profile where id = bucket.profile_id
+      # shop_member has a composite primary key; PowerSync needs a text id.
+      - select profile_id || ':' || user_id as id, profile_id, user_id, role, created_at from shop_member where profile_id = bucket.profile_id
+      - select * from product where profile_id = bucket.profile_id
+      - select * from product_variant where profile_id = bucket.profile_id
+      - select * from customer where profile_id = bucket.profile_id
+      - select * from sale where profile_id = bucket.profile_id
+      - select * from sale_item where profile_id = bucket.profile_id
+      - select * from expense where profile_id = bucket.profile_id
+      - select * from supplier where profile_id = bucket.profile_id
+      - select * from stock_alert where profile_id = bucket.profile_id
