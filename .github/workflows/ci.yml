@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: flutter
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # sqflite_common_ffi loads libsqlite3.so, which only the -dev package provides.
+      - name: Install SQLite
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      # pubspec.yaml requires Dart ^3.11.5; latest stable satisfies it.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  supabase:
+    name: supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Supabase project may not exist on every branch; skip the job's work when it is absent.
+      - name: Check for Supabase project
+        id: detect
+        run: |
+          if [ -f supabase/config.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::supabase/config.toml not found; skipping Supabase database tests."
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.detect.outputs.present == 'true'
+        with:
+          version: latest
+
+      # Only Postgres is needed: migrations are applied on start, pgTAP tests run against it.
+      - name: Start database
+        if: steps.detect.outputs.present == 'true'
+        run: supabase db start
+
+      - name: Run database tests
+        if: steps.detect.outputs.present == 'true'
+        run: supabase test db
