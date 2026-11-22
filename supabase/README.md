@@ -93,6 +93,13 @@ The PowerSync upload connector should map local changes as follows:
   value in an update. Devices change stock concurrently, and an absolute
   write would overwrite another device's change. A new product or variant may
   carry its initial `stock_qty` on insert.
+- **Variant stock total**: for a product with variants, the server keeps
+  `product.stock_qty` equal to the sum of its variants' `stock_qty`. The
+  `product_variant_stock` trigger recomputes it on every variant insert,
+  delete, `stock_qty` change, or move to another product (both products).
+  So the client must not upload `product.stock_qty` for a product with
+  variants; it may insert, update and delete `product_variant` rows directly.
+  A product whose last variant is deleted keeps its current stock.
 - **Profile**: `update_profile`, or a direct update by the owner.
 - **Products, variants, customers, expenses, suppliers**: direct
   insert/update/delete. Archive products (`archived = 1`) rather than
@@ -149,8 +156,9 @@ Records a sale that already happened on a device. In one transaction it
 inserts the sale and its items, then decrements stock relatively:
 `stock_qty = stock_qty - qty`.
 
-- `product.stock_qty` goes down for every item.
-- `product_variant.stock_qty` also goes down for items with a `variant_id`.
+- For an item with a `variant_id`, `product_variant.stock_qty` goes down, and
+  the product's total follows through `product_variant_stock`.
+- For a product without variants, `product.stock_qty` goes down.
 
 Arguments:
 
@@ -167,22 +175,27 @@ Behaviour:
 - **Never rejected for stock.** If the shop's `allow_oversell = 0` and the
   sale leaves stock below zero, the call adds a `stock_alert` row for that
   product or variant. It adds one row per variant below zero
-  (`variant_id` set) and one per product whose total is below zero
+  (`variant_id` set) and one per product without variants below zero
   (`variant_id` null). The row records `stock_after`. With `allow_oversell = 1`
   stock goes negative and no alert is written.
 - **Missing references do not fail the sale.** Another device may have
   deleted the customer or variant. In that case, the sale is stored with
   `customer_id` or `variant_id` null, as `ON DELETE SET NULL` would have done.
   The same applies to a customer of another shop, or a variant that does not
-  belong to the item's product. The product total is still decremented. No
-  variant stock changes for such an item.
-- An item with no `variant_id` for a product that has variants is accepted.
-  It decrements only the product total.
+  belong to the item's product.
+- **Lines that change no stock are flagged.** An item of a product that has
+  variants but whose `variant_id` is missing or was dropped is accepted, and
+  changes no stock, so the total stays the variants' sum. Whatever
+  `allow_oversell` is, the call adds a `stock_alert` row for that line, with
+  `variant_id` null and `stock_after` set to the product's unchanged stock.
+  An item whose dropped variant belonged to a product that now has no
+  variants decrements that product, as for any product without variants.
 - **Fails as a whole** only if an item's product is not in the shop
   (`23503`). Products are archived, not deleted, so this means a bad id.
 - Sales of one shop are serialised on the shop's `business_profile` row.
 
-Returns `{"sale_id": "...", "duplicate": false, "stock_alerts": 0}`.
+Returns `{"sale_id": "...", "duplicate": false, "stock_alerts": 0}`, where
+`stock_alerts` counts every `stock_alert` row the call added.
 
 ### `adjust_stock(product_id text, variant_id text, delta bigint) returns jsonb`
 
@@ -192,8 +205,9 @@ negative, and stock may go below zero.
 - With `variant_id` null, it changes only the product. A product that has
   variants refuses this with `22023`, because its total must stay the sum of
   its variants.
-- With `variant_id` set, it changes the variant and its product's total by
-  `delta`. The variant must belong to the product.
+- With `variant_id` set, it changes the variant, and the product's total
+  follows through `product_variant_stock`. The variant must belong to the
+  product.
 
 Returns `{"product_stock_qty": n, "variant_stock_qty": n | null}`. Fails with
 `P0002` if the product is not in one of the caller's shops.

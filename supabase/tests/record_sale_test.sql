@@ -1,7 +1,8 @@
--- record_sale: relative stock decrement, idempotent retry, oversell alerts.
+-- record_sale: relative stock decrement, idempotent retry, oversell alerts,
+-- and a variant product's stock staying the sum of its variants.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(42);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'owner-a@example.com'),
@@ -13,6 +14,8 @@ do $$ begin
   perform create_shop('{"id":"shop-b","name":"Shop B","type":"general","allow_oversell":1}');
 end $$;
 insert into product (id, profile_id, name, stock_qty) values ('pb1', 'shop-b', 'Pen', 1);
+insert into product (id, profile_id, name) values ('pb2', 'shop-b', 'Shirt');
+insert into product_variant (id, product_id, profile_id, size, stock_qty) values ('vb1', 'pb2', 'shop-b', 'M', 2);
 insert into customer (id, profile_id, name) values ('cb1', 'shop-b', 'Bea');
 
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-000000000001"}';
@@ -20,11 +23,14 @@ do $$ begin
   perform create_shop('{"id":"shop-a","name":"Shop A","type":"shoes","variant_support":1}');
 end $$;
 insert into product (id, profile_id, name, stock_qty) values ('p1', 'shop-a', 'Socks', 10);
--- A product with variants: product stock is the variants' total.
-insert into product (id, profile_id, name, stock_qty) values ('p2', 'shop-a', 'Sneaker', 5);
+-- A product with variants: inserted with a stale total, which the variants'
+-- inserts replace with their sum (3 + 2).
+insert into product (id, profile_id, name, stock_qty) values ('p2', 'shop-a', 'Sneaker', 99);
 insert into product_variant (id, product_id, profile_id, size, stock_qty) values
   ('v1', 'p2', 'shop-a', '42', 3),
   ('v2', 'p2', 'shop-a', '43', 2);
+select is((select stock_qty from product where id = 'p2'), 5::bigint,
+  'inserting variants sets the product total to their sum');
 insert into customer (id, profile_id, name) values ('ca1', 'shop-a', 'Asha');
 
 -- Two sales of the same product, recorded by two devices.
@@ -64,7 +70,7 @@ select lives_ok($$select record_sale(
     '[{"id":"s3i1","product_id":"p2","product_name":"Sneaker","variant_id":"v1","qty":2}]')$$,
   'variant sale is recorded');
 select is((select stock_qty from product_variant where id = 'v1'), 1::bigint, 'variant stock decremented');
-select is((select stock_qty from product where id = 'p2'), 3::bigint, 'product total decremented');
+select is((select stock_qty from product where id = 'p2'), 3::bigint, 'product total decremented once');
 
 -- Oversell with allow_oversell = 0: sale accepted, alert written.
 select is(
@@ -90,7 +96,8 @@ select results_eq(
   $$select product_id, variant_id, stock_after from stock_alert where sale_id = 's5'$$,
   $$values ('p2'::text, 'v2'::text, -1::bigint)$$,
   'alert names the variant');
-select is((select stock_qty from product where id = 'p2'), 0::bigint, 'product total follows the variant');
+select is((select stock_qty from product where id = 'p2'), 0::bigint,
+  'product total is the variants'' sum (1 + -1)');
 
 -- Items cannot point at another shop's product; the whole sale is rolled back.
 select throws_ok($$select record_sale(
@@ -109,18 +116,32 @@ select is(
 select is((select customer_id from sale where id = 's7'), null, 'missing customer is stored as null');
 select is((select variant_id from sale_item where id = 's7i1'), null,
   'variant of another product is stored as null');
-select is((select stock_qty from product where id = 'p1'), -3::bigint, 'the product total is still decremented');
+select is((select stock_qty from product where id = 'p1'), -3::bigint,
+  'the product without variants is still decremented');
 select is((select stock_qty from product_variant where id = 'v1'), 1::bigint, 'the other product''s variant is untouched');
 
-insert into product_variant (id, product_id, profile_id, size, stock_qty) values ('v3', 'p2', 'shop-a', '44', 0);
+-- Variants added and removed with stock: the total follows (0 + 4, then 0).
+insert into product_variant (id, product_id, profile_id, size, stock_qty) values ('v3', 'p2', 'shop-a', '44', 4);
+select is((select stock_qty from product where id = 'p2'), 4::bigint, 'a new variant''s stock is added to the total');
 delete from product_variant where id = 'v3';
+select is((select stock_qty from product where id = 'p2'), 0::bigint, 'a deleted variant''s stock leaves the total');
+
+-- A sale of the deleted variant is kept, changes no stock, and is flagged.
 select is(
   record_sale(
     '{"id":"s9","profile_id":"shop-a"}',
-    '[{"id":"s9i1","product_id":"p2","product_name":"Sneaker","variant_id":"v3","qty":1}]') ->> 'duplicate',
-  'false', 'sale of a deleted variant is accepted');
+    '[{"id":"s9i1","product_id":"p2","product_name":"Sneaker","variant_id":"v3","qty":1}]'),
+  '{"sale_id":"s9","duplicate":false,"stock_alerts":1}'::jsonb,
+  'sale of a deleted variant is accepted with one alert');
 select is((select variant_id from sale_item where id = 's9i1'), null, 'deleted variant is stored as null');
-select is((select stock_qty from product where id = 'p2'), -1::bigint, 'the product total is decremented');
+select results_eq(
+  $$select (select stock_qty from product where id = 'p2'),
+           (select sum(stock_qty)::bigint from product_variant where product_id = 'p2')$$,
+  $$values (0::bigint, 0::bigint)$$, 'no stock changes and the total is still the variants'' sum');
+select results_eq(
+  $$select product_id, variant_id, stock_after from stock_alert where sale_id = 's9'$$,
+  $$values ('p2'::text, null::text, 0::bigint)$$,
+  'alert names the product and its unchanged stock');
 
 do $$ begin
   perform record_sale('{"id":"s10","profile_id":"shop-a","customer_id":"cb1"}', '[]');
@@ -130,16 +151,16 @@ select is((select customer_id from sale where id = 's10'), null, 'another shop''
 select is((select customer_id from sale where id = 's11'), 'ca1', 'the shop''s own customer is kept');
 
 -- An item without a variant for a product with variants is still accepted
--- (the device recorded it), and decrements only the product total.
+-- (the device recorded it), changes no stock, and is flagged.
 select is(
   record_sale(
     '{"id":"s12","profile_id":"shop-a"}',
-    '[{"id":"s12i1","product_id":"p2","product_name":"Sneaker","qty":1}]') ->> 'duplicate',
-  'false', 'variant product sold without a variant is accepted');
+    '[{"id":"s12i1","product_id":"p2","product_name":"Sneaker","qty":1}]') ->> 'stock_alerts',
+  '1', 'variant product sold without a variant is accepted with one alert');
 select results_eq(
   $$select (select stock_qty from product where id = 'p2'),
            (select sum(stock_qty)::bigint from product_variant where product_id = 'p2')$$,
-  $$values (-2::bigint, 0::bigint)$$, 'only the product total changes');
+  $$values (0::bigint, 0::bigint)$$, 'no stock changes and the total is still the variants'' sum');
 
 -- items must be an array.
 select throws_ok($$select record_sale('{"id":"s8","profile_id":"shop-a"}', '{}')$$,
@@ -153,6 +174,12 @@ select is(
     '[{"id":"sb1i1","product_id":"pb1","product_name":"Pen","qty":4}]') ->> 'stock_alerts',
   '0', 'no alert when the shop allows oversells');
 select is((select stock_qty from product where id = 'pb1'), -3::bigint, 'stock goes negative');
+select is(
+  record_sale(
+    '{"id":"sb2","profile_id":"shop-b"}',
+    '[{"id":"sb2i1","product_id":"pb2","product_name":"Shirt","qty":1}]') ->> 'stock_alerts',
+  '1', 'a line that changes no stock is flagged even when oversells are allowed');
+select is((select stock_qty from product where id = 'pb2'), 2::bigint, '... and the total stays the variant''s stock');
 
 select * from finish();
 rollback;

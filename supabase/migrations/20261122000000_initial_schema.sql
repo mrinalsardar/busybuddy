@@ -75,8 +75,8 @@ create table public.product (
   price_minor bigint not null default 0 check (price_minor >= 0),
   cost_price_minor bigint not null default 0 check (cost_price_minor >= 0),
   category text,
-  -- For a product with variants this is the sum of the variants' stock.
-  -- No CHECK >= 0: it goes negative on oversells.
+  -- For a product with variants this is the sum of the variants' stock, kept
+  -- by the product_variant_stock trigger. No CHECK >= 0: it goes negative on oversells.
   stock_qty bigint not null default 0,
   low_stock_threshold integer not null default 5 check (low_stock_threshold >= 0),
   expiry_date text,
@@ -166,13 +166,14 @@ create table public.supplier (
 );
 
 -- Written by record_sale when a sale takes stock below zero while the shop's
--- allow_oversell is 0. The sale itself is always kept: it already happened on
--- a device that may have been offline.
+-- allow_oversell is 0, and for every sale line of a product with variants that
+-- changed no stock (no variant, or one since deleted). The sale itself is
+-- always kept: it already happened on a device that may have been offline.
 create table public.stock_alert (
   id text primary key default gen_random_uuid()::text,
   profile_id text not null references public.business_profile (id) on delete cascade,
   product_id text not null,
-  -- Set when the variant's stock went negative; null for the product total.
+  -- Set when the variant's stock went negative; null for a product.
   variant_id text,
   sale_id text not null,
   stock_after bigint not null,
@@ -364,6 +365,47 @@ create trigger product_code_conflicts
   for each row
   execute function private.flag_code_conflicts();
 
+-- Variant stock total ---------------------------------------------------------
+-- A product with variants has stock_qty = the sum of its variants' stock_qty.
+-- Recomputed on every variant insert, delete, stock change or move, for the
+-- old and the new product. A product left with no variants keeps its stock.
+-- The product row is locked before the sum is read, so concurrent variant
+-- changes of one product each see the other's committed stock.
+
+create function private.sync_variant_product_stock()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_products text[];
+  v_product text;
+begin
+  if tg_op = 'INSERT' then
+    v_products := array[new.product_id];
+  elsif tg_op = 'DELETE' then
+    v_products := array[old.product_id];
+  else
+    v_products := array[old.product_id, new.product_id];
+  end if;
+  for v_product in select distinct x from unnest(v_products) x loop
+    perform 1 from public.product where id = v_product for no key update;
+    update public.product p
+    set stock_qty = (select sum(v.stock_qty) from public.product_variant v where v.product_id = p.id),
+        updated_at = public.to_db_time(now())
+    where p.id = v_product
+      and exists (select 1 from public.product_variant v where v.product_id = p.id);
+  end loop;
+  return null;
+end;
+$$;
+
+create trigger product_variant_stock
+  after insert or delete or update of stock_qty, product_id on public.product_variant
+  for each row
+  execute function private.sync_variant_product_stock();
+
 -- Row-level security ----------------------------------------------------------
 
 alter table public.business_profile enable row level security;
@@ -503,17 +545,18 @@ end;
 $$;
 
 -- Records a sale that already happened on a device. In one transaction:
--- inserts the sale and its items, then decrements product.stock_qty and, for
--- items with a variant_id, product_variant.stock_qty by the sold qty
--- (relative, so concurrent devices do not overwrite each other).
+-- inserts the sale and its items, then decrements by the sold qty (relative,
+-- so concurrent devices do not overwrite each other) the variant's stock_qty
+-- for an item with a variant (product_variant_stock updates the product), or
+-- product.stock_qty for a product without variants.
 --
 -- Idempotent on sale id: a retried upload of a recorded sale changes nothing.
 -- Never rejects for stock: if the shop's allow_oversell is 0 and a product or
 -- variant ends below zero, a stock_alert row is written instead. A customer_id
 -- or variant_id that no longer exists in the shop (deleted by another device)
 -- is stored as null rather than failing the sale. An item without a variant
--- for a product that has variants is accepted and decrements only the product
--- total.
+-- for a product that has variants is accepted, changes no stock, and always
+-- gets a stock_alert row.
 --
 -- sale: sale columns (id and profile_id required). items: array of sale_item
 -- columns; sale_id and profile_id are taken from the sale.
@@ -589,8 +632,7 @@ begin
     unit_price_minor, cost_price_minor
   )
   select i.id, v_sale_id, s.profile_id, i.product_id, i.product_name,
-         -- A variant that no longer exists for the product is dropped; the
-         -- product total is still decremented.
+         -- A variant that no longer exists for the product is dropped.
          v.id,
          coalesce(i.qty, 1), coalesce(i.unit_price_minor, 0),
          coalesce(i.cost_price_minor, 0)
@@ -618,10 +660,11 @@ begin
   v_alerts := v_alerts + v_n;
 
   with sold as (
-    select product_id, sum(qty) as qty
-    from sale_item
-    where sale_id = v_sale_id
-    group by product_id
+    select si.product_id, sum(si.qty) as qty
+    from sale_item si
+    where si.sale_id = v_sale_id
+      and not exists (select 1 from product_variant v where v.product_id = si.product_id)
+    group by si.product_id
   ), upd as (
     update product p
     set stock_qty = p.stock_qty - sold.qty,
@@ -637,13 +680,25 @@ begin
   get diagnostics v_n = row_count;
   v_alerts := v_alerts + v_n;
 
+  -- Lines of a product with variants but without a (live) variant change no
+  -- stock: the total must stay the variants' sum. Flag each one.
+  insert into stock_alert (profile_id, product_id, variant_id, sale_id, stock_after)
+  select s.profile_id, si.product_id, null, v_sale_id, p.stock_qty
+  from sale_item si
+  join product p on p.id = si.product_id
+  where si.sale_id = v_sale_id and si.variant_id is null
+    and exists (select 1 from product_variant v where v.product_id = si.product_id);
+  get diagnostics v_n = row_count;
+  v_alerts := v_alerts + v_n;
+
   return jsonb_build_object('sale_id', v_sale_id, 'duplicate', false, 'stock_alerts', v_alerts);
 end;
 $$;
 
 -- Relative manual stock change (restock, correction). With a variant_id it
--- changes the variant and its product's total by the same delta. A product
--- with variants needs a variant_id, so its total stays the variants' sum.
+-- changes the variant (product_variant_stock updates the product's total). A
+-- product with variants needs a variant_id, so its total stays the variants'
+-- sum.
 create function public.adjust_stock(product_id text, variant_id text, delta bigint)
 returns jsonb
 language plpgsql
@@ -684,13 +739,14 @@ begin
         adjust_stock.variant_id, adjust_stock.product_id
         using errcode = 'no_data_found';
     end if;
+    select p.stock_qty into v_product_stock from product p where p.id = adjust_stock.product_id;
+  else
+    update product p
+    set stock_qty = p.stock_qty + delta,
+        updated_at = to_db_time(now())
+    where p.id = adjust_stock.product_id
+    returning p.stock_qty into v_product_stock;
   end if;
-
-  update product p
-  set stock_qty = p.stock_qty + delta,
-      updated_at = to_db_time(now())
-  where p.id = adjust_stock.product_id
-  returning p.stock_qty into v_product_stock;
 
   return jsonb_build_object('product_stock_qty', v_product_stock,
                             'variant_stock_qty', v_variant_stock);

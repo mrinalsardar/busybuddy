@@ -1,8 +1,8 @@
--- create_shop, update_profile and the currency lock, SKU/barcode uniqueness,
--- adjust_stock, delete rules and column defaults.
+-- create_shop, update_profile and the currency lock, adjust_stock and the
+-- variant stock total, delete rules and column defaults.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(26);
+select plan(31);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'owner-a@example.com'),
@@ -67,9 +67,11 @@ set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-000000000001"}';
 
 -- adjust_stock
 insert into product (id, profile_id, name) values ('p3', 'shop-a', 'No codes');
-insert into product (id, profile_id, name, stock_qty) values ('p4', 'shop-a', 'Boots', 3);
+insert into product (id, profile_id, name) values ('p4', 'shop-a', 'Boots');
 insert into product_variant (id, product_id, profile_id, size, stock_qty) values
   ('v1', 'p4', 'shop-a', 'S', 1), ('v2', 'p4', 'shop-a', 'M', 2);
+select is((select stock_qty from product where id = 'p4'), 3::bigint,
+  'the product total is its variants'' sum (1 + 2)');
 select is(adjust_stock('p3', null, 5), '{"product_stock_qty":5,"variant_stock_qty":null}'::jsonb,
   'adjust_stock adds to a plain product');
 select is(adjust_stock('p3', null, -7) ->> 'product_stock_qty', '-2', 'adjust_stock can go negative');
@@ -82,6 +84,18 @@ select throws_ok($$select adjust_stock('p4', null, 1)$$,
 select is((select stock_qty from product where id = 'p4'), 2::bigint, 'refused adjust leaves the total alone');
 select is((select stock_qty from product where id = 'p3'), -2::bigint, 'failed adjust changes nothing');
 
+-- Moving a variant recomputes both products: p5 becomes v3's stock, p4 drops it.
+insert into product (id, profile_id, name, stock_qty) values ('p5', 'shop-a', 'Sandals', 7);
+insert into product_variant (id, product_id, profile_id, size, stock_qty) values ('v3', 'p4', 'shop-a', 'L', 4);
+select is((select stock_qty from product where id = 'p4'), 6::bigint, 'a new variant adds to the total (1 + 1 + 4)');
+update product_variant set product_id = 'p5' where id = 'v3';
+select results_eq(
+  $$select (select stock_qty from product where id = 'p4'), (select stock_qty from product where id = 'p5')$$,
+  $$values (2::bigint, 4::bigint)$$, 'a moved variant leaves the old total and makes the new one');
+-- A product whose last variant is deleted keeps its stock.
+delete from product_variant where id = 'v3';
+select is((select stock_qty from product where id = 'p5'), 4::bigint, 'removing the last variant keeps the total');
+
 -- Deletes: a sold product cannot be deleted; deleting the shop removes everything.
 do $$ begin
   perform record_sale('{"id":"s1","profile_id":"shop-a"}',
@@ -90,6 +104,7 @@ end $$;
 select throws_ok($$delete from product where id = 'p4'$$, '23503', null, 'a sold product cannot be deleted');
 delete from product_variant where id = 'v1';
 select is((select variant_id from sale_item where id = 's1i1'), null, 'deleting a variant clears sale_item.variant_id');
+select is((select stock_qty from product where id = 'p4'), 1::bigint, 'the total is the remaining variant''s stock');
 select is((select profile_id from sale_item where id = 's1i1'), 'shop-a', '... and keeps its shop');
 reset role;
 delete from business_profile where id = 'shop-a';
