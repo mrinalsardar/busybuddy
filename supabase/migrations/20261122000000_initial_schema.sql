@@ -183,6 +183,26 @@ create table public.stock_alert (
   foreign key (sale_id, profile_id) references public.sale (id, profile_id) on delete cascade
 );
 
+-- Two active products of one shop with the same SKU or barcode. Devices create
+-- products offline, so the server accepts duplicate codes rather than reject
+-- an upload (which would block that device's upload queue), and flags them
+-- here. Written by the product_code_conflicts trigger; resolved_at is set when
+-- either product is archived or its code changes.
+create table public.code_conflict (
+  id text primary key default gen_random_uuid()::text,
+  profile_id text not null references public.business_profile (id) on delete cascade,
+  -- The product whose write created the duplicate.
+  product_id text not null,
+  -- The active product that already had the code.
+  other_product_id text not null,
+  field text not null check (field in ('sku', 'barcode')),
+  value text not null,
+  created_at text not null default public.to_db_time(now()),
+  resolved_at text,
+  foreign key (product_id, profile_id) references public.product (id, profile_id) on delete cascade,
+  foreign key (other_product_id, profile_id) references public.product (id, profile_id) on delete cascade
+);
+
 -- Indexes ---------------------------------------------------------------------
 
 create index idx_product_profile on public.product (profile_id);
@@ -202,12 +222,13 @@ create index idx_stock_alert_profile on public.stock_alert (profile_id);
 create index idx_stock_alert_sale on public.stock_alert (sale_id);
 create index idx_shop_member_user on public.shop_member (user_id);
 create index idx_shop_invite_profile on public.shop_invite (profile_id);
+create index idx_code_conflict_profile on public.code_conflict (profile_id);
 
--- SKU and barcode are unique per shop among active products; archiving a
--- product frees its codes for reuse.
-create unique index idx_product_sku on public.product (profile_id, sku)
+-- Lookup of active products by code. Not unique: duplicates are flagged in
+-- code_conflict instead of rejected (see product_code_conflicts).
+create index idx_product_sku on public.product (profile_id, sku)
   where sku is not null and archived = 0;
-create unique index idx_product_barcode on public.product (profile_id, barcode)
+create index idx_product_barcode on public.product (profile_id, barcode)
   where barcode is not null and archived = 0;
 
 -- Membership checks -----------------------------------------------------------
@@ -278,6 +299,71 @@ create trigger business_profile_currency_lock
         or old.currency_decimals is distinct from new.currency_decimals)
   execute function private.enforce_currency_lock();
 
+-- Duplicate codes -------------------------------------------------------------
+-- On a product write: resolve open code_conflict rows that the write ends (the
+-- product is archived, or its code no longer matches), then flag each other
+-- active product of the shop with the same non-null sku or barcode.
+
+create function private.flag_code_conflicts()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.code_conflict c
+  set resolved_at = public.to_db_time(now())
+  where c.profile_id = new.profile_id
+    and c.resolved_at is null
+    and new.id in (c.product_id, c.other_product_id)
+    and (new.archived = 1
+         or c.value is distinct from (case c.field when 'sku' then new.sku else new.barcode end));
+
+  if new.archived = 1 then
+    return null;
+  end if;
+
+  if new.sku is not null then
+    -- Serialise writers of the same code, so two concurrent inserts still see
+    -- each other.
+    perform pg_advisory_xact_lock(hashtext(new.profile_id || ':sku:' || new.sku));
+    insert into public.code_conflict (profile_id, product_id, other_product_id, field, value)
+    select new.profile_id, new.id, p.id, 'sku', new.sku
+    from public.product p
+    where p.profile_id = new.profile_id and p.sku = new.sku and p.archived = 0
+      and p.id <> new.id
+      and not exists (
+        select 1 from public.code_conflict c
+        where c.profile_id = new.profile_id and c.resolved_at is null
+          and c.field = 'sku' and c.value = new.sku
+          and ((c.product_id = new.id and c.other_product_id = p.id)
+               or (c.product_id = p.id and c.other_product_id = new.id)));
+  end if;
+
+  if new.barcode is not null then
+    perform pg_advisory_xact_lock(hashtext(new.profile_id || ':barcode:' || new.barcode));
+    insert into public.code_conflict (profile_id, product_id, other_product_id, field, value)
+    select new.profile_id, new.id, p.id, 'barcode', new.barcode
+    from public.product p
+    where p.profile_id = new.profile_id and p.barcode = new.barcode and p.archived = 0
+      and p.id <> new.id
+      and not exists (
+        select 1 from public.code_conflict c
+        where c.profile_id = new.profile_id and c.resolved_at is null
+          and c.field = 'barcode' and c.value = new.barcode
+          and ((c.product_id = new.id and c.other_product_id = p.id)
+               or (c.product_id = p.id and c.other_product_id = new.id)));
+  end if;
+
+  return null;
+end;
+$$;
+
+create trigger product_code_conflicts
+  after insert or update of sku, barcode, archived on public.product
+  for each row
+  execute function private.flag_code_conflicts();
+
 -- Row-level security ----------------------------------------------------------
 
 alter table public.business_profile enable row level security;
@@ -291,6 +377,7 @@ alter table public.sale_item enable row level security;
 alter table public.expense enable row level security;
 alter table public.supplier enable row level security;
 alter table public.stock_alert enable row level security;
+alter table public.code_conflict enable row level security;
 
 -- business_profile: members read, owners update. Created only by create_shop.
 create policy business_profile_select on public.business_profile
@@ -342,6 +429,10 @@ create policy stock_alert_member on public.stock_alert
   for all to authenticated
   using (profile_id in (select private.my_shop_ids()))
   with check (profile_id in (select private.my_shop_ids()));
+create policy code_conflict_member on public.code_conflict
+  for all to authenticated
+  using (profile_id in (select private.my_shop_ids()))
+  with check (profile_id in (select private.my_shop_ids()));
 
 -- Privileges: nothing for anon; authenticated gets what the policies allow.
 revoke all on all tables in schema public from anon, authenticated;
@@ -349,7 +440,8 @@ grant select, update on public.business_profile to authenticated;
 grant select on public.shop_member to authenticated;
 grant select, insert, update, delete on
   public.product, public.product_variant, public.customer, public.sale,
-  public.sale_item, public.expense, public.supplier, public.stock_alert
+  public.sale_item, public.expense, public.supplier, public.stock_alert,
+  public.code_conflict
   to authenticated;
 
 grant usage on schema private to authenticated;
@@ -417,7 +509,11 @@ $$;
 --
 -- Idempotent on sale id: a retried upload of a recorded sale changes nothing.
 -- Never rejects for stock: if the shop's allow_oversell is 0 and a product or
--- variant ends below zero, a stock_alert row is written instead.
+-- variant ends below zero, a stock_alert row is written instead. A customer_id
+-- or variant_id that no longer exists in the shop (deleted by another device)
+-- is stored as null rather than failing the sale. An item without a variant
+-- for a product that has variants is accepted and decrements only the product
+-- total.
 --
 -- sale: sale columns (id and profile_id required). items: array of sale_item
 -- columns; sale_id and profile_id are taken from the sale.
@@ -459,6 +555,14 @@ begin
   from business_profile where id = s.profile_id
   for no key update;
 
+  -- The sale already happened, so a reference another device has since
+  -- deleted must not make it fail: drop it, as ON DELETE SET NULL would have.
+  if s.customer_id is not null and not exists (
+    select 1 from customer c where c.id = s.customer_id and c.profile_id = s.profile_id
+  ) then
+    s.customer_id := null;
+  end if;
+
   insert into public.sale (
     id, profile_id, customer_id, created_at, subtotal_minor, tax_amount_minor,
     discount_minor, total_minor, payment_method
@@ -484,10 +588,15 @@ begin
     id, sale_id, profile_id, product_id, product_name, variant_id, qty,
     unit_price_minor, cost_price_minor
   )
-  select i.id, v_sale_id, s.profile_id, i.product_id, i.product_name, i.variant_id,
+  select i.id, v_sale_id, s.profile_id, i.product_id, i.product_name,
+         -- A variant that no longer exists for the product is dropped; the
+         -- product total is still decremented.
+         v.id,
          coalesce(i.qty, 1), coalesce(i.unit_price_minor, 0),
          coalesce(i.cost_price_minor, 0)
-  from jsonb_populate_recordset(null::public.sale_item, items) i;
+  from jsonb_populate_recordset(null::public.sale_item, items) i
+  left join product_variant v
+    on v.id = i.variant_id and v.product_id = i.product_id and v.profile_id = s.profile_id;
 
   with sold as (
     select variant_id, sum(qty) as qty
@@ -533,7 +642,8 @@ end;
 $$;
 
 -- Relative manual stock change (restock, correction). With a variant_id it
--- changes the variant and its product's total by the same delta.
+-- changes the variant and its product's total by the same delta. A product
+-- with variants needs a variant_id, so its total stays the variants' sum.
 create function public.adjust_stock(product_id text, variant_id text, delta bigint)
 returns jsonb
 language plpgsql
@@ -553,6 +663,15 @@ begin
   if v_profile is null or not private.is_shop_member(v_profile) then
     raise exception 'Product % not found', adjust_stock.product_id
       using errcode = 'no_data_found';
+  end if;
+
+  -- A variant product's stock is the sum of its variants, so it changes only
+  -- through a variant.
+  if adjust_stock.variant_id is null and exists (
+    select 1 from product_variant v where v.product_id = adjust_stock.product_id
+  ) then
+    raise exception 'Product % has variants: pass a variant_id', adjust_stock.product_id
+      using errcode = 'invalid_parameter_value';
   end if;
 
   if adjust_stock.variant_id is not null then
@@ -705,4 +824,4 @@ grant execute on function
 create publication powersync for table
   public.business_profile, public.shop_member, public.product,
   public.product_variant, public.customer, public.sale, public.sale_item,
-  public.expense, public.supplier, public.stock_alert;
+  public.expense, public.supplier, public.stock_alert, public.code_conflict;

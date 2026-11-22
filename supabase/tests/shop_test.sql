@@ -2,7 +2,7 @@
 -- adjust_stock, delete rules and column defaults.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(29);
+select plan(26);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'owner-a@example.com'),
@@ -65,28 +65,8 @@ select throws_ok($$select update_profile('{"id":"shop-b","currency":"EUR"}')$$,
   '23514', null, 'a sale locks the currency');
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-000000000001"}';
 
--- SKU and barcode uniqueness among active products
-update product set archived = 0 where id = 'p1';
-select throws_ok(
-  $$insert into product (id, profile_id, name, sku) values ('p2', 'shop-a', 'Shirt 2', 'SKU-1')$$,
-  '23505', null, 'duplicate active SKU is rejected');
-select throws_ok(
-  $$insert into product (id, profile_id, name, barcode) values ('p2', 'shop-a', 'Shirt 2', '890001')$$,
-  '23505', null, 'duplicate active barcode is rejected');
-update product set archived = 1 where id = 'p1';
-select lives_ok(
-  $$insert into product (id, profile_id, name, sku, barcode) values ('p2', 'shop-a', 'Shirt 2', 'SKU-1', '890001')$$,
-  'SKU and barcode are reusable after archiving');
-select lives_ok(
-  $$insert into product (id, profile_id, name) values ('p3', 'shop-a', 'No codes')$$,
-  'products without SKU or barcode do not clash');
-reset role;
-select lives_ok(
-  $$insert into product (id, profile_id, name, sku) values ('pb2', 'shop-b', 'Shirt', 'SKU-1')$$,
-  'the same SKU is fine in another shop');
-set local role authenticated;
-
 -- adjust_stock
+insert into product (id, profile_id, name) values ('p3', 'shop-a', 'No codes');
 insert into product (id, profile_id, name, stock_qty) values ('p4', 'shop-a', 'Boots', 3);
 insert into product_variant (id, product_id, profile_id, size, stock_qty) values
   ('v1', 'p4', 'shop-a', 'S', 1), ('v2', 'p4', 'shop-a', 'M', 2);
@@ -97,6 +77,9 @@ select is(adjust_stock('p4', 'v2', -1), '{"product_stock_qty":2,"variant_stock_q
   'adjust_stock changes the variant and the product total');
 select throws_ok($$select adjust_stock('p3', 'v1', 1)$$,
   'P0002', null, 'variant must belong to the product');
+select throws_ok($$select adjust_stock('p4', null, 1)$$,
+  '22023', null, 'a product with variants needs a variant_id');
+select is((select stock_qty from product where id = 'p4'), 2::bigint, 'refused adjust leaves the total alone');
 select is((select stock_qty from product where id = 'p3'), -2::bigint, 'failed adjust changes nothing');
 
 -- Deletes: a sold product cannot be deleted; deleting the shop removes everything.

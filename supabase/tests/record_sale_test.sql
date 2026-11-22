@@ -1,7 +1,7 @@
 -- record_sale: relative stock decrement, idempotent retry, oversell alerts.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(25);
+select plan(36);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'owner-a@example.com'),
@@ -13,6 +13,7 @@ do $$ begin
   perform create_shop('{"id":"shop-b","name":"Shop B","type":"general","allow_oversell":1}');
 end $$;
 insert into product (id, profile_id, name, stock_qty) values ('pb1', 'shop-b', 'Pen', 1);
+insert into customer (id, profile_id, name) values ('cb1', 'shop-b', 'Bea');
 
 set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-000000000001"}';
 do $$ begin
@@ -24,6 +25,7 @@ insert into product (id, profile_id, name, stock_qty) values ('p2', 'shop-a', 'S
 insert into product_variant (id, product_id, profile_id, size, stock_qty) values
   ('v1', 'p2', 'shop-a', '42', 3),
   ('v2', 'p2', 'shop-a', '43', 2);
+insert into customer (id, profile_id, name) values ('ca1', 'shop-a', 'Asha');
 
 -- Two sales of the same product, recorded by two devices.
 select is(
@@ -97,11 +99,47 @@ select throws_ok($$select record_sale(
   '23503', null, 'item for another shop''s product is rejected');
 select is_empty($$select 1 from sale where id = 's6'$$, 'rejected sale is not written');
 
--- A variant must belong to the item's product.
-select throws_ok($$select record_sale(
-    '{"id":"s7","profile_id":"shop-a"}',
-    '[{"id":"s7i1","product_id":"p1","product_name":"Socks","variant_id":"v1","qty":1}]')$$,
-  '23503', null, 'variant of a different product is rejected');
+-- A sale is never failed by a customer or variant that another device has
+-- since deleted, or that does not belong to the shop or the item's product.
+select is(
+  record_sale(
+    '{"id":"s7","profile_id":"shop-a","customer_id":"gone"}',
+    '[{"id":"s7i1","product_id":"p1","product_name":"Socks","variant_id":"v1","qty":1}]') ->> 'duplicate',
+  'false', 'sale with a missing customer and a foreign variant is accepted');
+select is((select customer_id from sale where id = 's7'), null, 'missing customer is stored as null');
+select is((select variant_id from sale_item where id = 's7i1'), null,
+  'variant of another product is stored as null');
+select is((select stock_qty from product where id = 'p1'), -3::bigint, 'the product total is still decremented');
+select is((select stock_qty from product_variant where id = 'v1'), 1::bigint, 'the other product''s variant is untouched');
+
+insert into product_variant (id, product_id, profile_id, size, stock_qty) values ('v3', 'p2', 'shop-a', '44', 0);
+delete from product_variant where id = 'v3';
+select is(
+  record_sale(
+    '{"id":"s9","profile_id":"shop-a"}',
+    '[{"id":"s9i1","product_id":"p2","product_name":"Sneaker","variant_id":"v3","qty":1}]') ->> 'duplicate',
+  'false', 'sale of a deleted variant is accepted');
+select is((select variant_id from sale_item where id = 's9i1'), null, 'deleted variant is stored as null');
+select is((select stock_qty from product where id = 'p2'), -1::bigint, 'the product total is decremented');
+
+do $$ begin
+  perform record_sale('{"id":"s10","profile_id":"shop-a","customer_id":"cb1"}', '[]');
+  perform record_sale('{"id":"s11","profile_id":"shop-a","customer_id":"ca1"}', '[]');
+end $$;
+select is((select customer_id from sale where id = 's10'), null, 'another shop''s customer is stored as null');
+select is((select customer_id from sale where id = 's11'), 'ca1', 'the shop''s own customer is kept');
+
+-- An item without a variant for a product with variants is still accepted
+-- (the device recorded it), and decrements only the product total.
+select is(
+  record_sale(
+    '{"id":"s12","profile_id":"shop-a"}',
+    '[{"id":"s12i1","product_id":"p2","product_name":"Sneaker","qty":1}]') ->> 'duplicate',
+  'false', 'variant product sold without a variant is accepted');
+select results_eq(
+  $$select (select stock_qty from product where id = 'p2'),
+           (select sum(stock_qty)::bigint from product_variant where product_id = 'p2')$$,
+  $$values (-2::bigint, 0::bigint)$$, 'only the product total changes');
 
 -- items must be an array.
 select throws_ok($$select record_sale('{"id":"s8","profile_id":"shop-a"}', '{}')$$,

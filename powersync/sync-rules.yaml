@@ -20,3 +20,4 @@ bucket_definitions:
       - select * from expense where profile_id = bucket.profile_id
       - select * from supplier where profile_id = bucket.profile_id
       - select * from stock_alert where profile_id = bucket.profile_id
+      - select * from code_conflict where profile_id = bucket.profile_id
