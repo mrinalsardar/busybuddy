@@ -2,7 +2,7 @@
 -- variant stock total, delete rules and column defaults.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(31);
+select plan(35);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'owner-a@example.com'),
@@ -92,9 +92,26 @@ update product_variant set product_id = 'p5' where id = 'v3';
 select results_eq(
   $$select (select stock_qty from product where id = 'p4'), (select stock_qty from product where id = 'p5')$$,
   $$values (2::bigint, 4::bigint)$$, 'a moved variant leaves the old total and makes the new one');
--- A product whose last variant is deleted keeps its stock.
+-- Removing every variant leaves 0 (the sum of no variants) in either delete
+-- order; then the product is stocked as a plain product.
 delete from product_variant where id = 'v3';
-select is((select stock_qty from product where id = 'p5'), 4::bigint, 'removing the last variant keeps the total');
+select is((select stock_qty from product where id = 'p5'), 0::bigint, 'removing the last variant leaves 0');
+insert into product (id, profile_id, name) values ('p6', 'shop-a', 'Caps'), ('p7', 'shop-a', 'Hats');
+insert into product_variant (id, product_id, profile_id, size, stock_qty) values
+  ('v6a', 'p6', 'shop-a', 'S', 3), ('v6b', 'p6', 'shop-a', 'M', 2),
+  ('v7a', 'p7', 'shop-a', 'S', 3), ('v7b', 'p7', 'shop-a', 'M', 2);
+delete from product_variant where id = 'v6a';
+delete from product_variant where id = 'v6b';
+delete from product_variant where id = 'v7b';
+delete from product_variant where id = 'v7a';
+select results_eq(
+  $$select (select stock_qty from product where id = 'p6'), (select stock_qty from product where id = 'p7')$$,
+  $$values (0::bigint, 0::bigint)$$, 'deleting all variants leaves 0 whatever the order');
+select is(adjust_stock('p6', null, 8) ->> 'product_stock_qty', '8',
+  'a product with no variants left takes the entered stock');
+select is(adjust_stock('p7', null, 8) ->> 'product_stock_qty', '8',
+  '... in either delete order');
+select is((select stock_qty from product where id = 'p6'), 8::bigint, 'the entered stock is stored');
 
 -- Deletes: a sold product cannot be deleted; deleting the shop removes everything.
 do $$ begin

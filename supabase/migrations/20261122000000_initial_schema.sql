@@ -368,7 +368,8 @@ create trigger product_code_conflicts
 -- Variant stock total ---------------------------------------------------------
 -- A product with variants has stock_qty = the sum of its variants' stock_qty.
 -- Recomputed on every variant insert, delete, stock change or move, for the
--- old and the new product. A product left with no variants keeps its stock.
+-- old and the new product. A product left with no variants gets 0 (the sum of
+-- no variants); adjust_stock then sets its stock as a plain product.
 -- The product row is locked before the sum is read, so concurrent variant
 -- changes of one product each see the other's committed stock.
 
@@ -392,10 +393,10 @@ begin
   for v_product in select distinct x from unnest(v_products) x loop
     perform 1 from public.product where id = v_product for no key update;
     update public.product p
-    set stock_qty = (select sum(v.stock_qty) from public.product_variant v where v.product_id = p.id),
+    set stock_qty = (select coalesce(sum(v.stock_qty), 0) from public.product_variant v
+                     where v.product_id = p.id),
         updated_at = public.to_db_time(now())
-    where p.id = v_product
-      and exists (select 1 from public.product_variant v where v.product_id = p.id);
+    where p.id = v_product;
   end loop;
   return null;
 end;

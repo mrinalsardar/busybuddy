@@ -98,8 +98,13 @@ The PowerSync upload connector should map local changes as follows:
   `product_variant_stock` trigger recomputes it on every variant insert,
   delete, `stock_qty` change, or move to another product (both products).
   So the client must not upload `product.stock_qty` for a product with
-  variants; it may insert, update and delete `product_variant` rows directly.
-  A product whose last variant is deleted keeps its current stock.
+  variants. It may insert and delete `product_variant` rows directly (a new
+  variant may carry its initial `stock_qty`), and update their non-stock
+  columns; variant stock changes go through `adjust_stock` or `record_sale`.
+- **Variant product to plain product**: deleting a product's last variant
+  sets its `product.stock_qty` to 0, the sum of no variants, whatever the
+  order of the deletes. In the same upload batch, after the deletes, upload
+  `adjust_stock(product_id, null, <stock the user entered>)`.
 - **Profile**: `update_profile`, or a direct update by the owner.
 - **Products, variants, customers, expenses, suppliers**: direct
   insert/update/delete. Archive products (`archived = 1`) rather than
@@ -204,7 +209,7 @@ negative, and stock may go below zero.
 
 - With `variant_id` null, it changes only the product. A product that has
   variants refuses this with `22023`, because its total must stay the sum of
-  its variants.
+  its variants. Once its last variant is deleted (stock 0), it is allowed.
 - With `variant_id` set, it changes the variant, and the product's total
   follows through `product_variant_stock`. The variant must belong to the
   product.
