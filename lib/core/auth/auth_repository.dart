@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../db/database_helper.dart';
+import '../db/sync_session.dart';
 
 /// A sign-in or shop-membership call failed. [message] is fit to show the user.
 class AuthFailure implements Exception {
@@ -71,9 +71,12 @@ class LocalAuthRepository implements AuthRepository {
 }
 
 class SupabaseAuthRepository implements AuthRepository {
-  SupabaseAuthRepository(this.client);
+  SupabaseAuthRepository(this.client, {required this.clearLocalData});
 
   final SupabaseClient client;
+
+  /// Deletes the local copy of the shop's data; see [SyncSession.clearLocalData].
+  final Future<void> Function() clearLocalData;
 
   @override
   bool get enabled => true;
@@ -109,7 +112,7 @@ class SupabaseAuthRepository implements AuthRepository {
         throw const AuthFailure('Could not sign out. Check your connection.');
       }
     }
-    await DatabaseHelper().disconnectAndClear();
+    await clearLocalData();
   }
 
   @override

@@ -9,6 +9,7 @@ import 'package:busybuddy/core/auth/auth_repository.dart';
 import 'package:busybuddy/core/dao/daos.dart';
 import 'package:busybuddy/core/db/database_helper.dart';
 import 'package:busybuddy/core/db/supabase_connector.dart';
+import 'package:busybuddy/core/db/sync_session.dart';
 import 'package:busybuddy/core/models/models.dart';
 
 import 'test_db.dart';
@@ -235,13 +236,20 @@ void main() {
     expect(await queueEmpty(), isFalse);
   });
 
-  test('signing out clears local data; a session ending on its own does not', () async {
+  test('a session ending on its own keeps local data and queued uploads', () async {
+    final sync = SyncSession(server.client, connector);
     await server.client.auth.signOut();
+    await Future<void>.delayed(Duration.zero);
+    await sync.idle;
+
     expect(await ProductDao().getById('product-1'), isNotNull);
     expect(await queueEmpty(), isFalse);
+  });
 
-    await signIn(server.client);
-    await SupabaseAuthRepository(server.client).signOut();
+  test('signing out clears local data and queued uploads', () async {
+    final sync = SyncSession(server.client, connector);
+    await SupabaseAuthRepository(server.client, clearLocalData: sync.clearLocalData).signOut();
+
     expect(await ProductDao().getById('product-1'), isNull);
     expect(await queueEmpty(), isTrue);
   });

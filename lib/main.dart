@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/auth/auth_repository.dart';
-import 'core/db/database_helper.dart';
 import 'core/db/supabase_connector.dart';
+import 'core/db/sync_session.dart';
 import 'core/providers/core_providers.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
@@ -55,39 +55,8 @@ Future<AuthRepository?> _initAuth() async {
     return null;
   }
   final client = Supabase.instance.client;
-  _syncWithSession(client, SupabaseConnector(client, powerSyncUrl: _powerSyncUrl));
-  return SupabaseAuthRepository(client);
-}
-
-/// Syncs the local database with Supabase while a session exists, and removes
-/// stops syncing when the session ends. Local data and queued uploads stay, so
-/// a revoked session loses nothing: signing in again resumes the upload. Only
-/// the user's own sign-out clears them ([SupabaseAuthRepository.signOut]).
-/// The app never waits for this:
-/// it works on the local database, and local changes queue for upload until
-/// the device is signed in and online.
-void _syncWithSession(SupabaseClient client, SupabaseConnector connector) {
-  var connected = false;
-  // Steps run one after another, so a sign-in right after a sign-out connects
-  // only once syncing has stopped.
-  var queue = Future<void>.value();
-  // Emits initialSession first, so a stored session connects at startup.
-  client.auth.onAuthStateChange.listen((state) {
-    queue = queue.then((_) async {
-      try {
-        if (state.session != null && !connected) {
-          connected = true;
-          await DatabaseHelper().connect(connector);
-        } else if (state.event == AuthChangeEvent.signedOut) {
-          connected = false;
-          await DatabaseHelper().disconnect();
-        }
-      } catch (e) {
-        connected = false;
-        debugPrint('Sync connection failed: $e');
-      }
-    });
-  });
+  final sync = SyncSession(client, SupabaseConnector(client, powerSyncUrl: _powerSyncUrl));
+  return SupabaseAuthRepository(client, clearLocalData: sync.clearLocalData);
 }
 
 class BusyBuddyApp extends ConsumerWidget {
