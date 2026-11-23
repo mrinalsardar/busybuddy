@@ -27,3 +27,14 @@ enabled = true
 site_url = "http://127.0.0.1:3000"
 jwt_expiry = 3600
 enable_signup = true
+
+# The app signs in with an emailed one-time code, not a link. Both templates
+# must show {{ .Token }}: a new user gets "confirmation", a known one
+# "magic_link". Hosted projects set the same templates in the dashboard.
+[auth.email.template.magic_link]
+subject = "Your BusyBuddy sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "Your BusyBuddy sign-in code"
+content_path = "./supabase/templates/confirmation.html"

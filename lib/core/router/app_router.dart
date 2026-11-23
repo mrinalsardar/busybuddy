@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/core_providers.dart';
+import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/syncing_screen.dart';
+import '../../features/profile/screens/join_shop_screen.dart';
 import '../../features/profile/screens/profile_type_screen.dart';
 import '../../features/profile/screens/business_details_screen.dart';
 import '../../features/home/home_shell.dart';
@@ -11,44 +14,59 @@ import '../../features/sales/screens/pos_screen.dart';
 import '../../features/sales/screens/sale_history_screen.dart';
 import '../../features/settings/screens/settings_screen.dart';
 
-/// Built once. Profile changes re-run [GoRouter.redirect] through
+/// Built once. Profile and auth changes re-run [GoRouter.redirect] through
 /// `refreshListenable` instead of rebuilding the router, which would reset
 /// navigation (e.g. bounce out of Settings after changing a setting).
+///
+/// With a backend: signed out goes to /login; signed in without a shop waits
+/// at /syncing for the first sync, then goes to /onboarding (create a shop, or
+/// join one at /onboarding/join). Without a backend there is no login or sync.
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
   ref.listen(activeProfileProvider, (_, _) => refresh.value++);
+  ref.listen(authProvider, (_, _) => refresh.value++);
 
   final router = GoRouter(
     initialLocation: '/',
     refreshListenable: refresh,
     redirect: (context, state) {
+      final authEnabled = ref.read(authRepositoryProvider).enabled;
+      final signedIn = ref.read(authProvider) != null;
       final profileAsync = ref.read(activeProfileProvider);
       final profile = profileAsync.valueOrNull;
-      final isLoading = profileAsync.isLoading;
       final currentPath = state.uri.path;
+      bool on(String path) => currentPath == path || currentPath.startsWith('$path/');
 
-      if (isLoading) return null;
+      if (authEnabled) {
+        if (!signedIn) return on('/login') ? null : '/login';
+        if (on('/login')) return '/';
+      }
 
-      // No profile → force onboarding
+      if (profileAsync.isLoading) return null;
+
       if (profile == null) {
-        if (!currentPath.startsWith('/onboarding')) {
-          return '/onboarding';
+        // A new device has no shop until its first sync: don't offer to create
+        // a second shop before the existing one had a chance to arrive.
+        if (authEnabled && ref.read(syncStateProvider).valueOrNull?.hasSynced != true) {
+          return on('/syncing') ? null : '/syncing';
         }
-        return null;
+        return on('/onboarding') ? null : '/onboarding';
       }
 
       // Profile exists → don't allow going back to onboarding
-      if (currentPath.startsWith('/onboarding')) {
-        return '/';
-      }
+      if (on('/onboarding') || on('/syncing')) return '/';
       return null;
     },
     routes: [
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/syncing', builder: (_, _) => const SyncingScreen()),
+
       // ── Onboarding ───────────────────────────────
       GoRoute(
         path: '/onboarding',
         builder: (_, _) => const ProfileTypeScreen(),
         routes: [
+          GoRoute(path: 'join', builder: (_, _) => const JoinShopScreen()),
           GoRoute(
             path: 'details/:type',
             builder: (_, state) {

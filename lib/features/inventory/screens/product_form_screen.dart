@@ -247,13 +247,17 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                         keyboard: _moneyKeyboard,
                         validator: (v) => _moneyValidator(v, required: true)),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _field('Cost Price', _costCtrl,
-                        Icons.money_off_rounded,
-                        keyboard: _moneyKeyboard,
-                        validator: _moneyValidator),
-                  ),
+                  // Cost prices are for the owner only. A staff edit keeps the
+                  // product's cost: _costCtrl still holds it.
+                  if (ref.watch(isOwnerProvider)) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _field('Cost Price', _costCtrl,
+                          Icons.money_off_rounded,
+                          keyboard: _moneyKeyboard,
+                          validator: _moneyValidator),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 24),

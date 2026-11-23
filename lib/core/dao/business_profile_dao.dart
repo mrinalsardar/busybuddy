@@ -23,10 +23,31 @@ class BusinessProfileDao extends BaseDao<BusinessProfile> {
   Future<int> delete(String id) =>
       throw UnsupportedError('A shop cannot be deleted; clear local data instead');
 
-  /// Returns the first (and typically only) profile, or null on fresh install.
-  Future<BusinessProfile?> getActiveProfile() async {
-    final list = await query(limit: 1);
+  /// The shop to work in: the first shop [userId] is a member of, by when
+  /// they joined. Without a [userId] (app without a backend), or while no
+  /// membership has synced yet, the first local profile. That covers a shop
+  /// created offline whose membership the server has not sent back yet.
+  /// Null when there is no profile: onboarding is needed.
+  Future<BusinessProfile?> getActiveProfile({String? userId}) async {
+    if (userId != null) {
+      final row = await (await db).getOptional(
+          'SELECT p.* FROM business_profile p '
+          'JOIN shop_member m ON m.profile_id = p.id '
+          'WHERE m.user_id = ? ORDER BY m.created_at, p.id LIMIT 1',
+          [userId]);
+      if (row != null) return fromMap(row);
+    }
+    final list = await query(orderBy: 'created_at, id', limit: 1);
     return list.isEmpty ? null : list.first;
+  }
+
+  /// The role of [userId] in the shop [profileId], or null if the membership
+  /// has not synced to this device (a shop created here and not yet uploaded).
+  Future<String?> getMemberRole(String profileId, String userId) async {
+    final row = await (await db).getOptional(
+        'SELECT role FROM shop_member WHERE profile_id = ? AND user_id = ?',
+        [profileId, userId]);
+    return row?['role'] as String?;
   }
 
   /// True once the profile has any product (archived included) or sale.

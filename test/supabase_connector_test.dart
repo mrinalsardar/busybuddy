@@ -5,9 +5,11 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:busybuddy/core/auth/auth_repository.dart';
 import 'package:busybuddy/core/dao/daos.dart';
 import 'package:busybuddy/core/db/database_helper.dart';
 import 'package:busybuddy/core/db/supabase_connector.dart';
+import 'package:busybuddy/core/db/sync_session.dart';
 import 'package:busybuddy/core/models/models.dart';
 
 import 'test_db.dart';
@@ -232,5 +234,28 @@ void main() {
     await expectLater(upload(), throwsStateError);
     expect(server.to('rpc/create_shop'), isEmpty);
     expect(await queueEmpty(), isFalse);
+  });
+
+  test('a session ending on its own keeps local data and queued uploads', () async {
+    final sync = SyncSession(server.client, connector);
+    await server.client.auth.signOut();
+    await Future<void>.delayed(Duration.zero);
+    await sync.idle;
+
+    expect(await ProductDao().getById('product-1'), isNotNull);
+    expect(await queueEmpty(), isFalse);
+  });
+
+  test('signing out clears local data and queued uploads', () async {
+    final sync = SyncSession(server.client, connector);
+    await SupabaseAuthRepository(server.client, clearLocalData: sync.clearLocalData).signOut();
+
+    expect(await ProductDao().getById('product-1'), isNull);
+    expect(await queueEmpty(), isTrue);
+  });
+
+  test('signing out throws when the local data could not be cleared', () async {
+    final repo = SupabaseAuthRepository(server.client, clearLocalData: () async => throw StateError('disk'));
+    await expectLater(repo.signOut(), throwsA(isA<AuthFailure>()));
   });
 }

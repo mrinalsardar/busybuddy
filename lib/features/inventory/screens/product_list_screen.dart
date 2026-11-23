@@ -13,6 +13,7 @@ class ProductListScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(productListProvider);
     final profile = ref.watch(activeProfileProvider).valueOrNull;
+    final isOwner = ref.watch(isOwnerProvider);
     final search = ref.watch(inventorySearchProvider);
     final avgPrices = ref.watch(avgSellingPriceProvider).valueOrNull ?? const {};
 
@@ -75,7 +76,8 @@ class ProductListScreen extends ConsumerWidget {
                         category: p.category ?? 'Uncategorized',
                         priceMinor: p.priceMinor,
                         avgSoldMinor: avgPrices[p.id],
-                        costMinor: p.costPriceMinor,
+                        // Cost prices are for the owner only.
+                        costMinor: isOwner ? p.costPriceMinor : 0,
                         stock: p.stockQty,
                         isLowStock: isLow,
                         money: profile?.money ?? MoneyFormat.fallback,
