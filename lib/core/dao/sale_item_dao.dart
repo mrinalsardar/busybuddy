@@ -1,5 +1,4 @@
 import '../db/base_dao.dart';
-import '../db/database_helper.dart';
 import '../models/sale_item.dart';
 
 class SaleItemDao extends BaseDao<SaleItem> {
@@ -12,6 +11,13 @@ class SaleItemDao extends BaseDao<SaleItem> {
   @override
   SaleItem fromMap(Map<String, dynamic> map) => SaleItem.fromMap(map);
 
+  @override
+  void validate(SaleItem item) {
+    check(item.qty > 0, 'Quantity must be at least 1');
+    check(item.unitPriceMinor >= 0, 'Price cannot be negative');
+    check(item.costPriceMinor >= 0, 'Cost price cannot be negative');
+  }
+
   Future<List<SaleItem>> getBySale(String saleId) async {
     return query(where: 'sale_id = ?', whereArgs: [saleId]);
   }
@@ -20,8 +26,7 @@ class SaleItemDao extends BaseDao<SaleItem> {
   /// weighted by quantity and rounded to the nearest minor unit. Uses line
   /// prices before any sale-level discount. Products never sold are absent.
   Future<Map<String, int>> getAvgSellingPricesMinor(String profileId) async {
-    final db = await DatabaseHelper().database;
-    final rows = await db.rawQuery(
+    final rows = await (await db).getAll(
       'SELECT si.product_id, '
       'CAST(ROUND(1.0 * SUM(si.qty * si.unit_price_minor) / SUM(si.qty)) AS INTEGER) AS avg_minor '
       'FROM sale_item si JOIN sale s ON s.id = si.sale_id '

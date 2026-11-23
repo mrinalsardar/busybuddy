@@ -1,8 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:powersync/powersync.dart';
 
 import 'package:busybuddy/core/dao/daos.dart';
+import 'package:busybuddy/core/db/data_exceptions.dart';
 import 'package:busybuddy/core/db/database_helper.dart';
 import 'package:busybuddy/core/models/models.dart';
 import 'package:busybuddy/core/providers/core_providers.dart';
@@ -10,15 +11,17 @@ import 'package:busybuddy/core/router/app_router.dart';
 import 'package:busybuddy/features/inventory/providers/inventory_providers.dart';
 import 'package:busybuddy/features/sales/providers/sales_providers.dart';
 
+import 'test_db.dart';
+
 const profile = BusinessProfile(id: 'profile-1', name: 'Shop', type: BusinessType.shoes);
 // Has one variant; its stored stock becomes the variant total (5), not 10.
 const product = Product(id: 'product-1', profileId: 'profile-1', name: 'Sneaker', priceMinor: 10000, stockQty: 10);
-const variant = ProductVariant(id: 'variant-1', productId: 'product-1', size: '42', stockQty: 5);
+const variant = ProductVariant(id: 'variant-1', productId: 'product-1', profileId: 'profile-1', size: '42', stockQty: 5);
 // No variants.
 const plain = Product(
     id: 'product-2', profileId: 'profile-1', name: 'Laces', priceMinor: 9999, costPriceMinor: 6000, stockQty: 10);
 
-Future<Database> get db => DatabaseHelper().database;
+Future<PowerSyncDatabase> get db => DatabaseHelper().database;
 
 Future<void> sell(Product p, {String? variantId, int qty = 1, String saleId = 'sale-1', DateTime? at}) =>
     SaleDao().recordSale(
@@ -27,6 +30,7 @@ Future<void> sell(Product p, {String? variantId, int qty = 1, String saleId = 's
         SaleItem(
           id: '$saleId-item',
           saleId: saleId,
+          profileId: profile.id,
           productId: p.id,
           productName: p.name,
           variantId: variantId,
@@ -39,27 +43,22 @@ Future<void> sell(Product p, {String? variantId, int qty = 1, String saleId = 's
 Future<int> stockOf(String productId) async => (await ProductDao().getById(productId))!.stockQty;
 Future<int> variantStock() async => (await ProductVariantDao().getById(variant.id))!.stockQty;
 
+Future<List<StockMovement>> movements(String productId) => StockMovementDao().getByProduct(productId);
+
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  });
+  useTestDatabase();
 
   setUp(() async {
-    await DatabaseHelper().close();
-    await DatabaseHelper().deleteDb();
     await BusinessProfileDao().insert(profile);
     await ProductDao().saveWithVariants(product, isNew: true, variants: [variant]);
     await ProductDao().saveWithVariants(plain, isNew: true);
   });
 
-  tearDown(() => DatabaseHelper().close());
-
   group('product delete (F-01)', () {
     test('hard delete of a sold product is blocked, sale items survive', () async {
       await sell(product, variantId: variant.id);
 
-      await expectLater(ProductDao().delete(product.id), throwsA(isA<DatabaseException>()));
+      await expectLater(ProductDao().delete(product.id), throwsA(isA<RecordInUseException>()));
       expect(await SaleItemDao().getBySale('sale-1'), hasLength(1));
     });
 
@@ -75,14 +74,25 @@ void main() {
       expect(items.single.productName, 'Sneaker');
     });
 
-    test('deleting a profile still cascades through sales and products', () async {
+    test('a product never sold can be deleted, with its variants', () async {
+      await ProductDao().delete(product.id);
+
+      expect(await ProductDao().getById(product.id), isNull);
+      expect(await ProductVariantDao().getById(variant.id), isNull);
+    });
+
+    test('a shop cannot be deleted; clearing local data removes every row', () async {
       await sell(product, variantId: variant.id);
 
-      await BusinessProfileDao().delete(profile.id);
+      expect(() => BusinessProfileDao().delete(profile.id), throwsUnsupportedError);
+      expect(await BusinessProfileDao().getById(profile.id), isNotNull);
 
-      for (final table in ['product', 'product_variant', 'sale', 'sale_item']) {
-        expect(await (await db).query(table), isEmpty, reason: table);
+      await DatabaseHelper().deleteDb();
+
+      for (final table in ['business_profile', 'product', 'product_variant', 'sale', 'sale_item', 'stock_movement']) {
+        expect(await (await db).getAll('SELECT * FROM $table'), isEmpty, reason: table);
       }
+      expect(await (await db).getNextCrudTransaction(), isNull);
     });
   });
 
@@ -90,7 +100,7 @@ void main() {
     test('inserting an existing id throws and leaves child rows intact', () async {
       await sell(product, variantId: variant.id);
 
-      await expectLater(BusinessProfileDao().insert(profile), throwsA(isA<DatabaseException>()));
+      await expectLater(BusinessProfileDao().insert(profile), throwsA(isA<DuplicateIdException>()));
       expect(await ProductDao().getByProfile(profile.id), hasLength(2));
       expect(await SaleItemDao().getBySale('sale-1'), hasLength(1));
     });
@@ -112,7 +122,7 @@ void main() {
 
   group('transactional product save (F-08)', () {
     test('variants removed from the form are deleted, new ones inserted', () async {
-      const added = ProductVariant(id: 'variant-2', productId: 'product-1', size: '43');
+      const added = ProductVariant(id: 'variant-2', productId: 'product-1', profileId: 'profile-1', size: '43');
 
       await ProductDao().saveWithVariants(product, isNew: false, variants: [added]);
 
@@ -121,12 +131,12 @@ void main() {
     });
 
     test('failed product write rolls back variant writes', () async {
-      const added = ProductVariant(id: 'variant-2', productId: 'product-1', size: '43');
+      const added = ProductVariant(id: 'variant-2', productId: 'product-1', profileId: 'profile-1', size: '43');
 
       // isNew with an existing id -> product insert fails inside the transaction.
       await expectLater(
         ProductDao().saveWithVariants(product, isNew: true, variants: [added]),
-        throwsA(isA<DatabaseException>()),
+        throwsA(isA<DuplicateIdException>()),
       );
       expect(await ProductVariantDao().getById('variant-2'), isNull);
     });
@@ -138,7 +148,7 @@ void main() {
 
       await ProductDao().saveWithVariants(product, isNew: false, variants: [
         variant.copyWith(stockQty: 2),
-        const ProductVariant(id: 'variant-2', productId: 'product-1', size: '43', stockQty: 4),
+        const ProductVariant(id: 'variant-2', productId: 'product-1', profileId: 'profile-1', size: '43', stockQty: 4),
       ]);
 
       expect(await stockOf(product.id), 6);
@@ -198,22 +208,102 @@ void main() {
     });
   });
 
+  group('stock ledger', () {
+    test('opening stock is an initial movement of a product that starts at 0', () async {
+      final m = (await movements(plain.id)).single;
+      expect((m.reason, m.delta, m.variantId), (StockMovementReason.initial, 10, null));
+
+      // For a product with variants, each variant gets its own.
+      final v = (await movements(product.id)).single;
+      expect((v.reason, v.delta, v.variantId), (StockMovementReason.initial, 5, variant.id));
+    });
+
+    test('a changed stock is a correction of the difference', () async {
+      await sell(plain, qty: 3);
+      // The form shows 7 and the user enters 9.
+      await ProductDao().saveWithVariants(plain.copyWith(stockQty: 9), isNew: false);
+      await ProductDao().updateStock(plain.id, 4);
+
+      expect((await movements(plain.id)).map((m) => (m.reason, m.delta)), [
+        (StockMovementReason.initial, 10),
+        (StockMovementReason.correction, 2),
+        (StockMovementReason.correction, -5),
+      ]);
+      expect(await stockOf(plain.id), 4);
+    });
+
+    test('a restock adds to the stock', () async {
+      await StockMovementDao().record(
+          profileId: profile.id, productId: product.id, variantId: variant.id, delta: 3, reason: StockMovementReason.restock);
+
+      expect(await variantStock(), 8);
+      expect(await stockOf(product.id), 8);
+    });
+
+    test('removing the last variant turns the entered stock into a conversion', () async {
+      await ProductDao().saveWithVariants(product.copyWith(stockQty: 12), isNew: false, variants: []);
+
+      expect(await ProductVariantDao().getByProduct(product.id), isEmpty);
+      expect((await movements(product.id)).last.reason, StockMovementReason.conversion);
+      expect((await movements(product.id)).last.delta, 12);
+      expect(await stockOf(product.id), 12);
+    });
+
+    test('a sale changes stock locally but records no movement (the server does)', () async {
+      await sell(plain, qty: 2);
+
+      expect(await movements(plain.id), hasLength(1));
+      expect(await stockOf(plain.id), 8);
+    });
+
+    test('deleting a variant keeps its sale lines, without the variant', () async {
+      await sell(product, variantId: variant.id);
+
+      await ProductVariantDao().delete(variant.id);
+
+      expect((await SaleItemDao().getBySale('sale-1')).single.variantId, isNull);
+      expect(await stockOf(product.id), 0);
+    });
+  });
+
   group('schema rules (F-13, F-18)', () {
-    test('negative prices are rejected by the database', () async {
-      await expectLater(
-          ProductDao().insert(plain.copyWith(id: 'neg-price', priceMinor: -1)), throwsA(isA<DatabaseException>()));
-      await expectLater(
-          ProductDao().insert(plain.copyWith(id: 'neg-cost', costPriceMinor: -1)), throwsA(isA<DatabaseException>()));
+    test('negative prices are rejected', () async {
+      await expectLater(ProductDao().insert(plain.copyWith(id: 'neg-price', priceMinor: -1)),
+          throwsA(isA<DataValidationException>()));
+      await expectLater(ProductDao().insert(plain.copyWith(id: 'neg-cost', costPriceMinor: -1)),
+          throwsA(isA<DataValidationException>()));
+      expect(await ProductDao().getById('neg-price'), isNull);
+    });
+
+    test('a sale line needs a quantity of at least 1', () async {
+      await expectLater(sell(plain, qty: 0), throwsA(isA<DataValidationException>()));
+      expect(await SaleDao().getByProfile(profile.id), isEmpty);
     });
 
     test('barcode is unique per profile among active products', () async {
       await ProductDao().insert(plain.copyWith(id: 'a', barcode: '890'));
 
       await expectLater(
-          ProductDao().insert(plain.copyWith(id: 'b', barcode: '890')), throwsA(isA<DatabaseException>()));
+          ProductDao().insert(plain.copyWith(id: 'b', barcode: '890')), throwsA(isA<DuplicateCodeException>()));
+      expect(await ProductDao().getById('b'), isNull);
 
       await ProductDao().archive('a');
       await ProductDao().insert(plain.copyWith(id: 'b', barcode: '890'));
+    });
+
+    test('a duplicate code that came from another device does not block other edits', () async {
+      await ProductDao().insert(plain.copyWith(id: 'a', sku: 'S1'));
+      // Synced down from a device that was offline: the server accepted it.
+      await (await db).execute(
+          "INSERT INTO product (id, profile_id, name, sku, archived, stock_qty) VALUES ('b', ?, 'B', 'S1', 0, 0)",
+          [profile.id]);
+      final b = (await ProductDao().getById('b'))!;
+
+      await ProductDao().saveWithVariants(b.copyWith(name: 'B renamed'), isNew: false);
+      expect((await ProductDao().getById('b'))!.name, 'B renamed');
+
+      await expectLater(ProductDao().saveWithVariants(plain.copyWith(sku: 'S1'), isNew: false),
+          throwsA(isA<DuplicateCodeException>()));
     });
 
     test("today's total counts today only, in minor units", () async {
@@ -229,14 +319,14 @@ void main() {
       await sell(plain, saleId: 's1');
       await sell(plain, saleId: 's2');
       await sell(plain, saleId: 's3');
-      await (await db).update('sale', {'customer_id': 'c1'}, where: "id IN ('s1', 's2')");
+      await (await db).execute("UPDATE sale SET customer_id = 'c1' WHERE id IN ('s1', 's2')");
 
       expect(await CustomerDao().getTotalSpentMinor('c1'), 2 * 9999);
     });
 
     test('timestamps are stored as UTC', () async {
       await sell(plain);
-      final row = (await (await db).query('sale')).single;
+      final row = (await (await db).getAll('SELECT * FROM sale')).single;
       expect(row['created_at'] as String, endsWith('Z'));
     });
   });
@@ -318,7 +408,7 @@ void main() {
       await notifier.updateProfile(current.copyWith(allowOversell: true));
       expect((await BusinessProfileDao().getById(profile.id))!.allowOversell, isTrue);
 
-      await BusinessProfileDao().delete(profile.id);
+      await DatabaseHelper().deleteDb();
       const empty = BusinessProfile(id: 'p2', name: 'New', type: BusinessType.general);
       await notifier.setProfile(empty);
       await notifier.updateProfile(empty.copyWith(currency: 'KWD', currencyDecimals: 3));

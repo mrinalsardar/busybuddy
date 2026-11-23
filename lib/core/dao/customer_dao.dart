@@ -1,6 +1,4 @@
-import 'package:sqflite/sqflite.dart';
 import '../db/base_dao.dart';
-import '../db/database_helper.dart';
 import '../models/customer.dart';
 
 class CustomerDao extends BaseDao<Customer> {
@@ -13,12 +11,20 @@ class CustomerDao extends BaseDao<Customer> {
   @override
   Customer fromMap(Map<String, dynamic> map) => Customer.fromMap(map);
 
+  /// Deletes a customer; their sales stay, with no customer.
+  @override
+  Future<int> delete(String id) async {
+    return (await db).writeTransaction((tx) async {
+      await tx.execute('UPDATE sale SET customer_id = NULL WHERE customer_id = ?', [id]);
+      return deleteRow(tx, tableName, id);
+    });
+  }
+
   /// Lifetime spend in minor units, calculated from the customer's sales
   /// rather than stored, so it can't drift from them.
   Future<int> getTotalSpentMinor(String customerId) async {
-    final db = await DatabaseHelper().database;
-    return Sqflite.firstIntValue(await db.rawQuery(
-        'SELECT COALESCE(SUM(total_minor), 0) FROM sale WHERE customer_id = ?',
-        [customerId]))!;
+    final row = await (await db).get(
+        'SELECT COALESCE(SUM(total_minor), 0) AS total FROM sale WHERE customer_id = ?', [customerId]);
+    return row['total'] as int;
   }
 }

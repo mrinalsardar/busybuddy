@@ -17,10 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # sqflite_common_ffi loads libsqlite3.so, which only the -dev package provides.
-      - name: Install SQLite
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
-
       # Pinned to the SDK the app is developed with (Dart 3.13.7, satisfies ^3.11.5).
       # Newer stables (3.50+) deprecate package:flutter/material.dart, so bump deliberately.
       - uses: subosito/flutter-action@v2

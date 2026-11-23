@@ -7,6 +7,7 @@ import '../dao/sale_item_dao.dart';
 import '../dao/customer_dao.dart';
 import '../dao/expense_dao.dart';
 import '../dao/supplier_dao.dart';
+import '../dao/stock_movement_dao.dart';
 import '../dao/backup_log_dao.dart';
 import '../models/business_profile.dart';
 
@@ -19,6 +20,7 @@ final saleItemDaoProvider = Provider((_) => SaleItemDao());
 final customerDaoProvider = Provider((_) => CustomerDao());
 final expenseDaoProvider = Provider((_) => ExpenseDao());
 final supplierDaoProvider = Provider((_) => SupplierDao());
+final stockMovementDaoProvider = Provider((_) => StockMovementDao());
 final backupLogDaoProvider = Provider((_) => BackupLogDao());
 
 // ── Active profile ─────────────────────────────────────

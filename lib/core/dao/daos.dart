@@ -6,4 +6,5 @@ export 'sale_item_dao.dart';
 export 'customer_dao.dart';
 export 'expense_dao.dart';
 export 'supplier_dao.dart';
+export 'stock_movement_dao.dart';
 export 'backup_log_dao.dart';

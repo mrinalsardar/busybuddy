@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:sqflite/sqflite.dart' show DatabaseException;
 import 'package:uuid/uuid.dart';
+import '../../../core/db/data_exceptions.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
 import '../../../core/providers/core_providers.dart';
@@ -137,6 +137,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             .map((ve) => ProductVariant(
                   id: ve.id,
                   productId: id,
+                  profileId: profile.id,
                   size: ve.sizeCtrl.text.trim().isEmpty ? null : ve.sizeCtrl.text.trim(),
                   color: ve.colorCtrl.text.trim().isEmpty ? null : ve.colorCtrl.text.trim(),
                   stockQty: int.parse(ve.stockCtrl.text.trim()),
@@ -145,12 +146,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
     try {
       await dao.saveWithVariants(product, isNew: !_isEdit, variants: variants);
-    } on DatabaseException catch (e) {
+    } on DuplicateCodeException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      _showError(e.isUniqueConstraintError()
-          ? 'Another product already uses this SKU or barcode'
-          : 'Could not save product: $e');
+      _showError(e.message);
       return;
     } catch (e) {
       if (!mounted) return;
