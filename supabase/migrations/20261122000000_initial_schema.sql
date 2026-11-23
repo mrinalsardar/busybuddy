@@ -470,6 +470,9 @@ begin
     where v.id = new.variant_id and v.product_id = new.product_id
     returning v.id, v.stock_qty into v_variant, v_stock;
   else
+    -- Lock the product before checking for variants: a concurrent variant
+    -- insert does not take the shop lock, and its product_variant_stock
+    -- recompute must run after this change, not be overwritten by it.
     perform 1 from product p where p.id = new.product_id for no key update;
     if not exists (select 1 from product_variant v where v.product_id = new.product_id) then
       update product p
