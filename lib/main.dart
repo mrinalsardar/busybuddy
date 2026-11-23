@@ -60,14 +60,16 @@ Future<AuthRepository?> _initAuth() async {
 }
 
 /// Syncs the local database with Supabase while a session exists, and removes
-/// the local copy when the session ends (sign-out, or the server revoked it),
-/// so the next user never sees this shop's data. The app never waits for this:
+/// stops syncing when the session ends. Local data and queued uploads stay, so
+/// a revoked session loses nothing: signing in again resumes the upload. Only
+/// the user's own sign-out clears them ([SupabaseAuthRepository.signOut]).
+/// The app never waits for this:
 /// it works on the local database, and local changes queue for upload until
 /// the device is signed in and online.
 void _syncWithSession(SupabaseClient client, SupabaseConnector connector) {
   var connected = false;
   // Steps run one after another, so a sign-in right after a sign-out connects
-  // only once the old data is cleared.
+  // only once syncing has stopped.
   var queue = Future<void>.value();
   // Emits initialSession first, so a stored session connects at startup.
   client.auth.onAuthStateChange.listen((state) {
@@ -78,7 +80,7 @@ void _syncWithSession(SupabaseClient client, SupabaseConnector connector) {
           await DatabaseHelper().connect(connector);
         } else if (state.event == AuthChangeEvent.signedOut) {
           connected = false;
-          await DatabaseHelper().disconnectAndClear();
+          await DatabaseHelper().disconnect();
         }
       } catch (e) {
         connected = false;

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:busybuddy/core/auth/auth_repository.dart';
 import 'package:busybuddy/core/dao/daos.dart';
 import 'package:busybuddy/core/db/database_helper.dart';
 import 'package:busybuddy/core/db/supabase_connector.dart';
@@ -232,5 +233,16 @@ void main() {
     await expectLater(upload(), throwsStateError);
     expect(server.to('rpc/create_shop'), isEmpty);
     expect(await queueEmpty(), isFalse);
+  });
+
+  test('signing out clears local data; a session ending on its own does not', () async {
+    await server.client.auth.signOut();
+    expect(await ProductDao().getById('product-1'), isNotNull);
+    expect(await queueEmpty(), isFalse);
+
+    await signIn(server.client);
+    await SupabaseAuthRepository(server.client).signOut();
+    expect(await ProductDao().getById('product-1'), isNull);
+    expect(await queueEmpty(), isTrue);
   });
 }

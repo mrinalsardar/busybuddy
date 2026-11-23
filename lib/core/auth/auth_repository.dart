@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../db/database_helper.dart';
+
 /// A sign-in or shop-membership call failed. [message] is fit to show the user.
 class AuthFailure implements Exception {
   final String message;
@@ -95,7 +97,9 @@ class SupabaseAuthRepository implements AuthRepository {
       _run(() => client.auth.verifyOTP(email: email, token: code, type: OtpType.email));
 
   /// Signs out. The session is removed on the device before the server is
-  /// told, so a failed server call (offline) still signs out.
+  /// told, so a failed server call (offline) still signs out. Then the local
+  /// copy is cleared so the next user never sees this shop's data. Callers
+  /// confirm pending uploads first.
   @override
   Future<void> signOut() async {
     try {
@@ -105,6 +109,7 @@ class SupabaseAuthRepository implements AuthRepository {
         throw const AuthFailure('Could not sign out. Check your connection.');
       }
     }
+    await DatabaseHelper().disconnectAndClear();
   }
 
   @override
