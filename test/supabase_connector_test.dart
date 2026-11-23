@@ -167,6 +167,7 @@ void main() {
       expect(s.method, 'POST');
       expect(s.prefer, contains('resolution=ignore-duplicates'));
       expect(s.query['on_conflict'], 'id');
+      expect((s.body as Map).containsKey('created_by'), isFalse);
     }
     // A product uploads before its opening stock.
     final paths = server.sent.map((s) => s.path).toList();

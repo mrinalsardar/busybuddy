@@ -124,7 +124,11 @@ class SupabaseConnector extends PowerSyncBackendConnector {
       case ('sale_item', UpdateType.put):
         throw const _UnsupportedChange('A sale item uploads only with its new sale (record_sale)');
       case ('stock_movement', UpdateType.put):
-        await client.from('stock_movement').upsert(row, onConflict: 'id', ignoreDuplicates: true);
+        await client.from('stock_movement').upsert(
+          {for (final e in row.entries) if (e.key != 'created_by' || e.value != null) e.key: e.value},
+          onConflict: 'id',
+          ignoreDuplicates: true,
+        );
       case ('stock_movement', _):
         throw const _UnsupportedChange('Stock movements are never updated or deleted');
       case (_, UpdateType.put):
