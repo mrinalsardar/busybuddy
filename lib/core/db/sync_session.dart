@@ -23,7 +23,7 @@ class SyncSession {
           _connected = false;
           await DatabaseHelper().disconnect();
         }
-      });
+      }).catchError((Object _) {});
     });
   }
 
@@ -37,21 +37,18 @@ class SyncSession {
   Future<void> get idle => _queue;
 
   /// Stops syncing and deletes the local data, after the steps queued so far.
+  /// Throws if the data could not be deleted.
   Future<void> clearLocalData() => _enqueue(() async {
         _connected = false;
         await DatabaseHelper().disconnectAndClear();
       });
 
   Future<void> _enqueue(Future<void> Function() step) {
-    final done = _queue.then((_) async {
-      try {
-        await step();
-      } catch (e) {
-        _connected = false;
-        debugPrint('Sync connection failed: $e');
-      }
+    final result = _queue.then((_) => step());
+    _queue = result.catchError((Object e) {
+      _connected = false;
+      debugPrint('Sync step failed: $e');
     });
-    _queue = done;
-    return done;
+    return result;
   }
 }

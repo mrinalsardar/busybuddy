@@ -112,7 +112,11 @@ class SupabaseAuthRepository implements AuthRepository {
         throw const AuthFailure('Could not sign out. Check your connection.');
       }
     }
-    await clearLocalData();
+    try {
+      await clearLocalData();
+    } catch (_) {
+      throw const AuthFailure('Signed out, but this device could not remove the shop data.');
+    }
   }
 
   @override

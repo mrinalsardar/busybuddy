@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/auth/auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -31,7 +32,17 @@ class SyncingScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
               TextButton(
-                onPressed: () => ref.read(authRepositoryProvider).signOut(),
+                onPressed: () async {
+                  try {
+                    await ref.read(authRepositoryProvider).signOut();
+                  } on AuthFailure catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
+                      );
+                    }
+                  }
+                },
                 child: const Text('Sign out'),
               ),
             ],

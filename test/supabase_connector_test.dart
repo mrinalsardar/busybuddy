@@ -253,4 +253,9 @@ void main() {
     expect(await ProductDao().getById('product-1'), isNull);
     expect(await queueEmpty(), isTrue);
   });
+
+  test('signing out throws when the local data could not be cleared', () async {
+    final repo = SupabaseAuthRepository(server.client, clearLocalData: () async => throw StateError('disk'));
+    await expectLater(repo.signOut(), throwsA(isA<AuthFailure>()));
+  });
 }
