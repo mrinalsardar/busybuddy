@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Syncs the local database with Supabase through PowerSync. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="busybuddy"
         android:name="${applicationName}"

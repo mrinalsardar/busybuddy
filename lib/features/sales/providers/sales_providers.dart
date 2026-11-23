@@ -195,6 +195,7 @@ Future<void> _recordCart(Ref ref, CartNotifier cart, String profileId) async {
     return SaleItem(
       id: uuid.v4(),
       saleId: saleId,
+      profileId: profileId,
       productId: ci.product.id,
       productName: ci.displayName,
       variantId: ci.variant?.id,

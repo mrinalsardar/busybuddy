@@ -4,6 +4,8 @@ import '../db/db_time.dart';
 class ProductVariant extends Equatable {
   final String id;
   final String productId;
+  /// The product's shop (business_profile id).
+  final String profileId;
   final String? size;
   final String? color;
   final int stockQty;
@@ -12,6 +14,7 @@ class ProductVariant extends Equatable {
   const ProductVariant({
     required this.id,
     required this.productId,
+    required this.profileId,
     this.size,
     this.color,
     this.stockQty = 0,
@@ -28,6 +31,7 @@ class ProductVariant extends Equatable {
   ProductVariant copyWith({
     String? id,
     String? productId,
+    String? profileId,
     String? size,
     String? color,
     int? stockQty,
@@ -36,6 +40,7 @@ class ProductVariant extends Equatable {
     return ProductVariant(
       id: id ?? this.id,
       productId: productId ?? this.productId,
+      profileId: profileId ?? this.profileId,
       size: size ?? this.size,
       color: color ?? this.color,
       stockQty: stockQty ?? this.stockQty,
@@ -47,6 +52,7 @@ class ProductVariant extends Equatable {
     return {
       'id': id,
       'product_id': productId,
+      'profile_id': profileId,
       'size': size,
       'color': color,
       'stock_qty': stockQty,
@@ -58,6 +64,7 @@ class ProductVariant extends Equatable {
     return ProductVariant(
       id: map['id'] as String,
       productId: map['product_id'] as String,
+      profileId: map['profile_id'] as String,
       size: map['size'] as String?,
       color: map['color'] as String?,
       stockQty: map['stock_qty'] as int? ?? 0,
@@ -70,5 +77,5 @@ class ProductVariant extends Equatable {
       ProductVariant.fromMap(json);
 
   @override
-  List<Object?> get props => [id, productId, size, color, stockQty];
+  List<Object?> get props => [id, productId, profileId, size, color, stockQty];
 }

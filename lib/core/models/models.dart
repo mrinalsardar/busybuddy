@@ -6,4 +6,5 @@ export 'sale_item.dart';
 export 'customer.dart';
 export 'expense.dart';
 export 'supplier.dart';
+export 'stock_movement.dart';
 export 'backup_log.dart';

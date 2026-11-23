@@ -3,6 +3,8 @@ import 'package:equatable/equatable.dart';
 class SaleItem extends Equatable {
   final String id;
   final String saleId;
+  /// The sale's shop (business_profile id).
+  final String profileId;
   final String productId;
   /// Product (and variant) name at time of sale, so history survives renames/archiving.
   final String productName;
@@ -15,6 +17,7 @@ class SaleItem extends Equatable {
   const SaleItem({
     required this.id,
     required this.saleId,
+    required this.profileId,
     required this.productId,
     required this.productName,
     this.variantId,
@@ -28,6 +31,7 @@ class SaleItem extends Equatable {
   SaleItem copyWith({
     String? id,
     String? saleId,
+    String? profileId,
     String? productId,
     String? productName,
     String? variantId,
@@ -38,6 +42,7 @@ class SaleItem extends Equatable {
     return SaleItem(
       id: id ?? this.id,
       saleId: saleId ?? this.saleId,
+      profileId: profileId ?? this.profileId,
       productId: productId ?? this.productId,
       productName: productName ?? this.productName,
       variantId: variantId ?? this.variantId,
@@ -48,7 +53,7 @@ class SaleItem extends Equatable {
   }
 
   Map<String, dynamic> toMap() => {
-    'id': id, 'sale_id': saleId, 'product_id': productId, 'product_name': productName,
+    'id': id, 'sale_id': saleId, 'profile_id': profileId, 'product_id': productId, 'product_name': productName,
     'variant_id': variantId, 'qty': qty,
     'unit_price_minor': unitPriceMinor, 'cost_price_minor': costPriceMinor,
   };
@@ -56,6 +61,7 @@ class SaleItem extends Equatable {
   factory SaleItem.fromMap(Map<String, dynamic> map) => SaleItem(
     id: map['id'] as String,
     saleId: map['sale_id'] as String,
+    profileId: map['profile_id'] as String,
     productId: map['product_id'] as String,
     productName: map['product_name'] as String,
     variantId: map['variant_id'] as String?,
@@ -68,5 +74,5 @@ class SaleItem extends Equatable {
   factory SaleItem.fromJson(Map<String, dynamic> json) => SaleItem.fromMap(json);
 
   @override
-  List<Object?> get props => [id, saleId, productId, productName, qty, unitPriceMinor, costPriceMinor];
+  List<Object?> get props => [id, saleId, profileId, productId, productName, qty, unitPriceMinor, costPriceMinor];
 }
