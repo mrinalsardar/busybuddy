@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/models/business_profile.dart';
 
 /// First onboarding screen — choose your business type.
-class ProfileTypeScreen extends StatelessWidget {
+class ProfileTypeScreen extends ConsumerWidget {
   const ProfileTypeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedIn = ref.watch(authProvider) != null;
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -86,6 +89,21 @@ class ProfileTypeScreen extends StatelessWidget {
                   }).toList(),
                 ),
               ),
+              // Only with a backend account: staff join a shop that exists.
+              if (signedIn)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () => context.go('/onboarding/join'),
+                      child: const Text('Have an invite code?'),
+                    ),
+                    TextButton(
+                      onPressed: () => ref.read(authRepositoryProvider).signOut(),
+                      child: const Text('Sign out'),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

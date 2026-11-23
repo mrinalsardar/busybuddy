@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/auth/auth_repository.dart';
+import '../../../core/db/database_helper.dart';
 import '../../../core/models/business_profile.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
+import '../../sales/providers/sales_providers.dart';
 import '../providers/settings_providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -20,10 +24,87 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
+  void _showError(BuildContext context, Object e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
+    );
+  }
+
+  Future<void> _invite(BuildContext context, WidgetRef ref, BusinessProfile profile) async {
+    final String code;
+    try {
+      code = await ref.read(authRepositoryProvider).createInvite(profile.id);
+    } on AuthFailure catch (e) {
+      if (context.mounted) _showError(context, e);
+      return;
+    }
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Staff invite code'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectableText(code,
+                key: const Key('inviteCode'),
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: 3)),
+            const SizedBox(height: 12),
+            const Text('Give this code to your staff member. It works once and expires in 7 days. '
+                'They sign in, choose "Have an invite code?" and enter it.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Clipboard.setData(ClipboardData(text: code)),
+            child: const Text('Copy'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    // Signing out removes this device's copy of the shop, so changes that
+    // have not uploaded yet would be lost.
+    final pending = (await (await DatabaseHelper().database).getUploadQueueStats()).count;
+    if (!context.mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: Text(pending > 0
+            ? '$pending changes on this device have not synced yet and will be lost. '
+                'Connect to the internet and wait for them to sync first.'
+            : 'This removes the shop data from this device. It stays in your shop online '
+                'and comes back when you sign in again.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(pending > 0 ? 'Sign out anyway' : 'Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    // The cart belongs to this shop and user.
+    ref.read(cartProvider).clear();
+    try {
+      await ref.read(authRepositoryProvider).signOut();
+    } on AuthFailure catch (e) {
+      if (context.mounted) _showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(activeProfileProvider).valueOrNull;
     final canEditCurrency = ref.watch(canEditCurrencyProvider).valueOrNull ?? false;
+    final isOwner = ref.watch(isOwnerProvider);
+    final signedIn = ref.watch(authProvider) != null;
     if (profile == null) return const Scaffold();
 
     return Scaffold(
@@ -31,17 +112,24 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
+          if (!isOwner)
+            const ListTile(
+              leading: Icon(Icons.lock_outline_rounded),
+              title: Text('Only the shop owner can change these settings.'),
+            ),
           _section('Selling'),
           SwitchListTile(
             title: const Text('Allow selling beyond stock'),
             subtitle: const Text(
                 'On: stock can go negative. Off: a sale is blocked when stock runs out.'),
             value: profile.allowOversell,
-            onChanged: (v) => _save(context, ref, profile.copyWith(allowOversell: v)),
+            onChanged: isOwner
+                ? (v) => _save(context, ref, profile.copyWith(allowOversell: v))
+                : null,
           ),
           const SizedBox(height: 16),
           _section('Currency'),
-          if (canEditCurrency) ...[
+          if (canEditCurrency && isOwner) ...[
             ListTile(
               title: const Text('Currency'),
               trailing: DropdownButton<String>(
@@ -69,10 +157,34 @@ class SettingsScreen extends ConsumerWidget {
           ] else
             ListTile(
               title: Text('${profile.currency} · ${profile.currencyDecimals} decimal places'),
-              subtitle: const Text(
-                  'Locked once products or sales exist: changing it would change every stored amount.'),
+              subtitle: Text(isOwner
+                  ? 'Locked once products or sales exist: changing it would change every stored amount.'
+                  : 'Only the shop owner can change this.'),
               trailing: const Icon(Icons.lock_outline_rounded),
             ),
+          if (signedIn) ...[
+            const SizedBox(height: 16),
+            if (isOwner) ...[
+              _section('Staff'),
+              ListTile(
+                leading: const Icon(Icons.person_add_alt_1_rounded),
+                title: const Text('Invite staff'),
+                subtitle: const Text('Create a code a staff member enters to join this shop.'),
+                onTap: () => _invite(context, ref, profile),
+              ),
+              const SizedBox(height: 16),
+            ],
+            _section('Account'),
+            ListTile(
+              leading: const Icon(Icons.account_circle_outlined),
+              title: Text(ref.watch(authRepositoryProvider).email ?? 'Signed in'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout_rounded),
+              title: const Text('Sign out'),
+              onTap: () => _signOut(context, ref),
+            ),
+          ],
         ],
       ),
     );

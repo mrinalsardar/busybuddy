@@ -25,6 +25,18 @@ Each test file runs in a transaction that it rolls back. The tests insert their
 own `auth.users` rows. They act as a user with
 `set local role authenticated` plus `set local request.jwt.claims = '{"sub":"<uuid>"}'`.
 
+## Auth
+
+The app signs in with an emailed one-time code (`signInWithOtp` and
+`verifyOTP`), not a link. The `magic_link` and `confirmation` email templates
+must show `{{ .Token }}`: a new user gets `confirmation`, a known user
+`magic_link`. `templates/` and `config.toml` set this for the local stack (read
+the codes in Inbucket at http://127.0.0.1:54324). A hosted project needs the
+same templates in the dashboard (Authentication, Email Templates).
+
+A new user has no shop. The app then calls `create_shop` (through the upload
+connector) or `join_shop` with an invite code from `create_invite`.
+
 ## PowerSync
 
 1. Create a database role for PowerSync. The migration does not create it,
