@@ -37,7 +37,7 @@ class SyncSession {
       _enqueue(() => _apply(state.session)).catchError((Object _) {
         _users.add(null);
       });
-    });
+    }, onError: _onAuthError);
   }
 
   final SupabaseClient _client;
@@ -60,6 +60,18 @@ class SyncSession {
   /// The usable account after every auth event, once its data was checked:
   /// null when signed out or blocked by a [conflict].
   Stream<String?> get userChanges => _users.stream;
+
+  /// The SDK reports a failed session refresh as a stream error. A retryable
+  /// one (backend unreachable) is expected offline: the SDK retries on its own,
+  /// and a later refresh emits a normal event that resumes syncing. Log it and
+  /// go on. Any other error is reported as unhandled, as without a handler.
+  void _onAuthError(Object error, StackTrace stack) {
+    if (error is AuthRetryableFetchException) {
+      debugPrint('Session refresh failed, will retry: ${error.message}');
+      return;
+    }
+    Zone.current.handleUncaughtError(error, stack);
+  }
 
   /// Completes when every step queued so far has finished.
   Future<void> get idle => _queue;

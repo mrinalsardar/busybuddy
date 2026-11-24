@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -243,6 +244,39 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await sync.idle;
 
+    expect(await ProductDao().getById('product-1'), isNotNull);
+    expect(await queueEmpty(), isFalse);
+  });
+
+  test('a refresh failing because the backend is unreachable raises no unhandled error', () async {
+    final unhandled = <Object>[];
+    await runZonedGuarded(() async {
+      final sync = SyncSession(server.client, connector);
+      await sync.idle;
+      server.reply = (_) => throw http.ClientException('Connection refused');
+      await expectLater(server.client.auth.refreshSession(), throwsA(isA<AuthRetryableFetchException>()));
+      await Future<void>.delayed(Duration.zero);
+      await sync.idle;
+    }, (e, _) => unhandled.add(e));
+
+    expect(unhandled, isEmpty);
+    expect(server.client.auth.currentSession, isNotNull);
+    expect(await ProductDao().getById('product-1'), isNotNull);
+  });
+
+  test('a refresh rejected as a revoked session still signs out and keeps local data', () async {
+    final unhandled = <Object>[];
+    await runZonedGuarded(() async {
+      final sync = SyncSession(server.client, connector);
+      await sync.idle;
+      server.reply = (_) => (code: 'refresh_token_not_found', status: 400);
+      await expectLater(server.client.auth.refreshSession(), throwsA(isA<AuthException>()));
+      await Future<void>.delayed(Duration.zero);
+      await sync.idle;
+    }, (e, _) => unhandled.add(e));
+
+    expect(unhandled, isEmpty);
+    expect(server.client.auth.currentSession, isNull);
     expect(await ProductDao().getById('product-1'), isNotNull);
     expect(await queueEmpty(), isFalse);
   });
