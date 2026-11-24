@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
+import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
 import '../../../core/providers/core_providers.dart';
@@ -9,7 +11,7 @@ final inventoryCategoryFilterProvider = StateProvider<String?>((_) => null);
 
 // ── Product list ───────────────────────────────────────
 final productListProvider = FutureProvider<List<Product>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return [];
 
   final search = ref.watch(inventorySearchProvider);
@@ -27,7 +29,7 @@ final productListProvider = FutureProvider<List<Product>>((ref) async {
 /// All active products for the POS grid. Unlike [productListProvider] it
 /// ignores the Inventory search and category filters.
 final posProductListProvider = FutureProvider<List<Product>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return [];
   return ref.read(productDaoProvider).getByProfile(profile.id);
 });
@@ -47,14 +49,14 @@ void invalidateProductViews(void Function(ProviderOrFamily) invalidate) {
 // ── Average selling price ──────────────────────────────
 /// Product id -> average actual selling price (minor units) from past sales.
 final avgSellingPriceProvider = FutureProvider<Map<String, int>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return {};
   return ref.read(saleItemDaoProvider).getAvgSellingPricesMinor(profile.id);
 });
 
 // ── Category list ──────────────────────────────────────
 final categoryListProvider = FutureProvider<List<String>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return [];
   return ref.read(productDaoProvider).getCategories(profile.id);
 });
@@ -73,7 +75,7 @@ final variantsProvider =
 
 // ── Low-stock count ────────────────────────────────────
 final lowStockCountProvider = FutureProvider<int>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return 0;
   final items = await ref.read(productDaoProvider).getLowStock(profile.id);
   return items.length;

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
@@ -12,10 +12,10 @@ class ProductListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(productListProvider);
-    final profile = ref.watch(activeProfileProvider).valueOrNull;
+    final profile = ref.watch(activeProfileProvider).value;
     final isOwner = ref.watch(isOwnerProvider);
     final search = ref.watch(inventorySearchProvider);
-    final avgPrices = ref.watch(avgSellingPriceProvider).valueOrNull ?? const {};
+    final avgPrices = ref.watch(avgSellingPriceProvider).value ?? const {};
 
     return Scaffold(
       appBar: AppBar(

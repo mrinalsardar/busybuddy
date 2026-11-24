@@ -11,7 +11,7 @@ import 'package:busybuddy/features/profile/screens/join_shop_screen.dart';
 import 'package:busybuddy/features/profile/screens/profile_type_screen.dart';
 import 'package:busybuddy/features/settings/screens/settings_screen.dart';
 import 'package:busybuddy/main.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
