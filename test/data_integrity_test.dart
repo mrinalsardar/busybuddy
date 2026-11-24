@@ -381,6 +381,25 @@ void main() {
       expect((await ProductDao().getById(plain.id))!.priceMinor, 9999);
     });
 
+    test('sale detail lists the items, and hides cost from staff', () async {
+      container.read(cartProvider).addItem(plain);
+      await container.read(checkoutProvider)();
+      final sale = (await SaleDao().getByProfile(profile.id)).single;
+
+      final staff = ProviderContainer(overrides: [isOwnerProvider.overrideWithValue(false)]);
+      addTearDown(staff.dispose);
+      final asStaff = await staff.read(saleItemsProvider(sale.id).future);
+      expect(asStaff.single.productName, 'Laces');
+      expect(asStaff.single.qty, 1);
+      expect(asStaff.single.unitPriceMinor, 9999);
+      expect(asStaff.single.lineTotalMinor, 9999);
+      expect(asStaff.single.costPriceMinor, 0);
+
+      final owner = ProviderContainer(overrides: [isOwnerProvider.overrideWithValue(true)]);
+      addTearDown(owner.dispose);
+      expect((await owner.read(saleItemsProvider(sale.id).future)).single.costPriceMinor, 6000);
+    });
+
     test('average selling price is qty-weighted over past sales', () async {
       container.read(cartProvider)
         ..addItem(plain)

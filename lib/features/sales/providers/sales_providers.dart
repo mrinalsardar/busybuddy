@@ -157,6 +157,15 @@ final recentSalesProvider = FutureProvider<List<Sale>>((ref) async {
   return ref.read(saleDaoProvider).getByProfile(profile.id, limit: 50);
 });
 
+/// Line items of one sale, from the local DB (so it works offline and for
+/// sales synced from another device). Cost prices are for the owner only: for
+/// staff they are zeroed here, so no screen can show them.
+final saleItemsProvider = FutureProvider.family<List<SaleItem>, String>((ref, saleId) async {
+  final items = await ref.read(saleItemDaoProvider).getBySale(saleId);
+  if (ref.watch(isOwnerProvider)) return items;
+  return [for (final i in items) i.copyWith(costPriceMinor: 0)];
+});
+
 // ── Checkout logic ─────────────────────────────────────
 /// Call as `ref.read(checkoutProvider)()`. Throws if the sale can't be saved
 /// (e.g. `SaleRejectedException` when stock ran out); the cart is left intact
