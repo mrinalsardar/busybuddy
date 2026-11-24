@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:busybuddy/core/auth/auth_repository.dart';
 import 'package:busybuddy/core/dao/business_profile_dao.dart';
 import 'package:busybuddy/core/db/database_helper.dart';
+import 'package:busybuddy/core/db/image_queue.dart';
 import 'package:busybuddy/core/db/local_owner.dart';
 import 'package:busybuddy/core/db/sync_session.dart';
 import 'package:busybuddy/core/models/models.dart';
@@ -143,6 +144,23 @@ void main() {
     test('does not fall back while nobody owns the data', () async {
       await addShop('a', '2026-01-01T00:00:00.000Z');
       expect(await dao.getActiveProfile(userId: 'user-1'), isNull);
+    });
+
+    group('pending uploads', () {
+      Future<bool> pending() async => LocalOwner.hasPendingUploads(await DatabaseHelper().database);
+
+      test('are none with both queues empty', () async {
+        expect(await pending(), isFalse);
+      });
+
+      test('include a queued image upload or delete', () async {
+        final db = await DatabaseHelper().database;
+        await db.writeTransaction((tx) => queueImageUpload(tx, 'shop/a.jpg'));
+        expect(await pending(), isTrue);
+        await db.execute('DELETE FROM image_queue');
+        await db.writeTransaction((tx) => queueImageDelete(tx, 'shop/a.jpg'));
+        expect(await pending(), isTrue);
+      });
     });
 
     test('is null without any shop', () async {

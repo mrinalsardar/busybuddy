@@ -33,7 +33,9 @@ class LocalOwner {
             'INSERT INTO local_owner (id, user_id, email) VALUES (?, ?, ?)', [_rowId, userId, email]);
       });
 
-  /// True while changes made on this device wait to upload.
+  /// True while changes made on this device wait to upload: row changes in
+  /// the PowerSync queue, or product image files in `image_queue`.
   static Future<bool> hasPendingUploads(PowerSyncDatabase db) async =>
-      await db.getNextCrudTransaction() != null;
+      await db.getNextCrudTransaction() != null ||
+      await db.getOptional('SELECT 1 FROM image_queue') != null;
 }
