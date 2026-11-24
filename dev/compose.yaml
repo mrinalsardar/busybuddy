@@ -91,6 +91,38 @@ services:
       PGRST_JWT_SECRET: *jwks
       PGRST_DB_USE_LEGACY_GUCS: "false"
 
+  # Supabase Storage: the product-images bucket (supabase/migrations/20261124000000_product_images.sql).
+  # Files live in a named volume; the service creates its own `storage` tables.
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.70.0
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+      rest: {condition: service_started}
+    environment:
+      ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJidXN5YnVkZHktbG9jYWwiLCJyb2xlIjoiYW5vbiIsImV4cCI6MjA4Mjc1ODQwMH0.FSus65ABjMXc0MHl-nP0S5xCkHEw7_X6akaFc8nCJ3U
+      SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJidXN5YnVkZHktbG9jYWwiLCJyb2xlIjoic2VydmljZV9yb2xlIiwiZXhwIjoyMDgyNzU4NDAwfQ.bAUS_oijZLEg1xBU-A3AKeHFa4JPkMIu8ouah_f99Mk
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: *jwt-secret
+      AUTH_JWT_SECRET: *jwt-secret
+      JWT_JWKS: *jwks
+      DATABASE_URL: postgres://supabase_storage_admin:postgres@db:5432/postgres
+      DB_INSTALL_ROLES: "false"
+      FILE_SIZE_LIMIT: "52428800"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: busybuddy
+      REGION: local
+      GLOBAL_S3_BUCKET: busybuddy
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5000/status"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   mail:
     image: public.ecr.aws/supabase/mailpit:v1.31.3
     restart: unless-stopped
@@ -124,6 +156,7 @@ services:
     depends_on:
       db: {condition: service_healthy}
       auth: {condition: service_started}
+      storage: {condition: service_healthy}
     restart: "no"
     environment:
       PGHOST: db
@@ -171,4 +204,5 @@ services:
 
 volumes:
   db-data:
+  storage-data:
   pub-cache:

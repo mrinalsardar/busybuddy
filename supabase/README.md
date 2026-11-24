@@ -27,10 +27,12 @@ supabase test db      # run tests/*.sql with pg_prove
 supabase stop
 ```
 
-Product images need the Storage service, which `supabase start` runs. The
-bucket and its policies are created only where the `storage` schema exists, so
-`supabase db start` (Postgres only) skips them, and `tests/product_images_test.sql`
-skips its checks there.
+Product images need the Storage service. `supabase start` runs it, and so does
+the container environment in `../dev/` (`dev/up.sh` starts Storage at
+http://127.0.0.1:54321/storage/v1, and applies the migrations only once Storage
+has created its schema). The bucket and its policies are created only where the
+`storage` schema exists, so `supabase db start` (Postgres only) skips them, and
+`tests/product_images_test.sql` skips its checks there.
 
 Each test file runs in a transaction that it rolls back. The tests insert their
 own `auth.users` rows. They act as a user with
