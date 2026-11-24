@@ -165,15 +165,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Future<void> _delete() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surfaceCard,
         title: const Text('Delete Product?'),
         content: const Text(
             'The product will be removed from inventory and POS. Past sales keep their records.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete', style: TextStyle(color: AppTheme.error)),
           ),
         ],
