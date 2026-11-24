@@ -156,10 +156,10 @@ Both commands act only on the Compose project `busybuddy-dev`. To rebuild the te
 
 `supabase start` runs the same services and also gives you `supabase test db` (the pgTAP tests). It needs the Supabase CLI and a Docker socket. The steps below start Supabase, create the PowerSync role and storage database by hand and run PowerSync with `docker run`. Run every command from the repository root, except where a step says otherwise.
 
-**1. Start Supabase.** Sign-in and sync need only the database, Auth, the API gateway (`kong`), `rest` and the mail container. Exclude the rest, so the stack needs less RAM and starts faster:
+**1. Start Supabase.** Sign-in and sync need only the database, Auth, the API gateway (`kong`), `rest`, `storage-api` (product pictures) and the mail container. Exclude the rest, so the stack needs less RAM and starts faster:
 
 ```
-supabase start -x realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,studio,postgres-meta
+supabase start -x realtime,imgproxy,edge-runtime,logflare,vector,supavisor,studio,postgres-meta
 ```
 
 The first start pulls every image, including the excluded ones, which takes a few minutes. It applies `supabase/migrations/` and prints the API URL (`http://127.0.0.1:54321`), the **Publishable** key (`sb_publishable_...`) and the database URL (`postgresql://postgres:postgres@127.0.0.1:54322/postgres`). `supabase status` prints them again.
@@ -173,7 +173,7 @@ $dst = "$env:TEMP\busybuddy-backend"
 New-Item -ItemType Directory $dst
 Copy-Item -Recurse <path-to-repo>\supabase, <path-to-repo>\powersync $dst
 cd $dst
-npx supabase start -x realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,studio,postgres-meta
+npx supabase start -x realtime,imgproxy,edge-runtime,logflare,vector,supavisor,studio,postgres-meta
 ```
 
 Use `npx supabase ...` in place of `supabase ...` in the steps below, and `docker` from that same Windows shell.

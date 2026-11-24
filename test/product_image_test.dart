@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -43,6 +44,13 @@ class Backend {
   final requests = <Req>[];
   int? Function(Req request) reply = (_) => null;
   bool offline = false;
+  bool hang = false;
+
+  /// What a failure says: the message, and the `statusCode` of its body when
+  /// that differs from the HTTP status (Storage reports a bad token as HTTP 400
+  /// with `statusCode` "403").
+  String message = 'rejected';
+  String? bodyStatus;
   final files = <String, Uint8List>{};
 
   late final client = SupabaseClient(
@@ -52,9 +60,10 @@ class Backend {
       final r = Req(request);
       requests.add(r);
       if (offline) throw const SocketException('offline');
+      if (hang && r.isStorage) return Completer<http.Response>().future;
       final status = reply(r);
       if (status != null) {
-        return http.Response(jsonEncode({'message': 'rejected $status', 'error': 'x'}), status,
+        return http.Response(jsonEncode({'message': message, 'error': 'x', 'statusCode': bodyStatus ?? '$status'}), status,
             request: request, headers: {'content-type': 'application/json'});
       }
       final json = {'content-type': 'application/json'};
@@ -234,7 +243,7 @@ void main() {
 
     group('uploading', () {
       late String path;
-      late Future<void> Function() upload;
+      late Future<bool> Function() upload;
 
       setUp(() async {
         path = await store.save(profile.id, product.id, bytes('jpeg'));
@@ -262,6 +271,7 @@ void main() {
 
       test('a rejection that retrying cannot fix is recorded and skipped', () async {
         backend.reply = (_) => 403;
+        backend.message = 'new row violates row-level security policy';
         await upload();
 
         expect(await queue(), isEmpty);
@@ -269,6 +279,58 @@ void main() {
         expect(errors.single['table_name'], 'storage.$productImageBucket');
         expect(errors.single['row_id'], path);
         expect(errors.single['code'], '403');
+      });
+
+      for (final (name, status, bodyStatus, message) in [
+        ('a 413', 413, null, 'The object exceeded the maximum allowed size'),
+        ('a 415', 415, null, 'mime type image/png is not supported'),
+        ('a 404', 404, null, 'Bucket not found'),
+      ]) {
+        test('$name is recorded and skipped', () async {
+          backend.reply = (_) => status;
+          backend.message = message;
+          backend.bodyStatus = bodyStatus;
+          await upload();
+
+          expect(await queue(), isEmpty);
+          expect(await (await DatabaseHelper().database).getAll('SELECT * FROM upload_error'), hasLength(1));
+        });
+      }
+
+      for (final (name, status, bodyStatus, message) in [
+        ('an expired token', 400, '403', '"exp" claim timestamp check failed'),
+        ('an invalid token header', 400, '403', 'JWS Protected Header is invalid'),
+        ('a disallowed token algorithm', 400, '403', '"alg" (Algorithm) Header Parameter value not allowed'),
+        ('a 403 that is not a policy rejection', 403, null, 'Forbidden'),
+        ('a 401', 401, null, 'Unauthorized'),
+        ('a 408', 408, null, 'Request Timeout'),
+        ('a rate limit', 429, null, 'Too Many Requests'),
+        ('a 5xx', 503, null, 'Service Unavailable'),
+      ]) {
+        test('$name keeps the image queued', () async {
+          backend.reply = (_) => status;
+          backend.message = message;
+          backend.bodyStatus = bodyStatus;
+
+          expect(await upload(), isTrue);
+
+          expect(await queue(), [
+            {'op': 'upload', 'path': path}
+          ]);
+          expect(await (await DatabaseHelper().database).getAll('SELECT * FROM upload_error'), isEmpty);
+        });
+      }
+
+      test('a Storage that never answers times out and keeps it queued', () async {
+        store = ProductImageStore(backend.client,
+            directory: DatabaseHelper().productImageDir, requestTimeout: const Duration(milliseconds: 50));
+        backend.hang = true;
+
+        expect(await upload(), isTrue);
+
+        expect(await queue(), [
+          {'op': 'upload', 'path': path}
+        ]);
       });
 
       test('a server error or no network keeps it queued for a retry', () async {
@@ -324,7 +386,7 @@ void main() {
     });
   });
 
-  test('the connector uploads a picture before its product row, and deletes the old one after', () async {
+  test('the connector uploads the product row, then the picture, then deletes the old one', () async {
     final connector = SupabaseConnector(backend.client, powerSyncUrl: 'http://powersync.test', images: store);
     final db = await DatabaseHelper().database;
     final first = await store.save(profile.id, product.id, bytes('jpeg'));
@@ -337,8 +399,8 @@ void main() {
     await connector.uploadData(db);
 
     expect(backend.requests.map((r) => r.method == 'POST' && r.isStorage ? 'POST ${r.object}' : '${r.method} ${r.path}'), [
-      'POST $second',
       'PATCH /rest/v1/product',
+      'POST $second',
       'DELETE /storage/v1/object/product-images',
     ]);
     expect(await db.getNextCrudTransaction(), isNull);
@@ -375,5 +437,83 @@ void main() {
     expect(await queue(), [
       {'op': 'upload', 'path': path}
     ]);
+  });
+
+  group('retrying the images', () {
+    late SupabaseConnector connector;
+    late String path;
+
+    Future<void> waitFor(Future<bool> Function() done) async {
+      for (var i = 0; i < 100 && !await done(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      }
+    }
+
+    Iterable<Req> posts() => backend.storage.where((r) => r.method == 'POST');
+
+    setUp(() async {
+      connector = SupabaseConnector(backend.client,
+          powerSyncUrl: 'http://powersync.test', images: store, imageRetryDelay: const Duration(milliseconds: 100));
+      path = await store.save(profile.id, product.id, bytes('jpeg'));
+      await ProductDao().saveWithVariants(product.copyWith(imagePath: path), isNew: true);
+    });
+
+    test('rows reach the server before the picture, and a Storage that hangs does not delay them', () async {
+      store = ProductImageStore(backend.client,
+          directory: DatabaseHelper().productImageDir, requestTimeout: const Duration(milliseconds: 50));
+      connector = SupabaseConnector(backend.client,
+          powerSyncUrl: 'http://powersync.test', images: store, imageRetryDelay: const Duration(minutes: 5));
+      backend.hang = true;
+
+      await connector.uploadData(await DatabaseHelper().database);
+
+      final order = backend.requests.map((r) => r.isStorage ? 'storage' : r.path).toList();
+      expect(order.first, '/rest/v1/rpc/create_shop');
+      expect(order.indexOf('storage'), greaterThan(order.indexOf('/rest/v1/product')));
+      expect(order.last, 'storage');
+    });
+
+    test('uploads once Storage recovers, with no new local write', () async {
+      final db = await DatabaseHelper().database;
+      backend.reply = (r) => r.isStorage ? 503 : null;
+      await connector.uploadData(db);
+      expect(await queue(), [
+        {'op': 'upload', 'path': path}
+      ]);
+
+      backend.reply = (_) => null;
+      await waitFor(() async => (await queue()).isEmpty);
+
+      expect(await queue(), isEmpty);
+      expect(posts().length, greaterThanOrEqualTo(2));
+    });
+
+    test('stops retrying when the queue is empty', () async {
+      final db = await DatabaseHelper().database;
+      backend.reply = (r) => r.isStorage ? 503 : null;
+      await connector.uploadData(db);
+      backend.reply = (_) => null;
+      await waitFor(() async => (await queue()).isEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final seen = backend.requests.length;
+
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+
+      expect(backend.requests.length, seen);
+    });
+
+    test('never runs more than one timer', () async {
+      final db = await DatabaseHelper().database;
+      backend.reply = (r) => r.isStorage ? 503 : null;
+      await connector.uploadData(db);
+      await connector.uploadData(db);
+      final before = posts().length;
+
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+
+      // One timer at 100 ms makes about 3 attempts; two would make about 6.
+      expect(posts().length - before, lessThanOrEqualTo(4));
+      expect(posts().length - before, greaterThanOrEqualTo(1));
+    });
   });
 }

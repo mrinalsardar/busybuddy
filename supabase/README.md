@@ -220,9 +220,11 @@ from a cache.
   using `private.my_shop_ids()`). There is no update policy and no `anon`
   access.
 - **Upload and cleanup are the device's job.** Storage does not allow deleting
-  objects with SQL. A device tries to upload the file before it uploads the
-  product row; a Storage failure leaves the file queued and does not hold back
-  the row, so a device may briefly find no file for a path. It deletes the old
+  objects with SQL. A device uploads the file after its rows (a new shop
+  must exist before its files pass the access policy), with a 15 s limit per
+  request. A Storage failure leaves the file queued, never holds back the
+  rows, and is retried on a timer; until then another device may find no file
+  for a path and shows a placeholder. It deletes the old
   file after a picture is replaced or removed or the product is archived or
   deleted. A device keeps these jobs in the local `image_queue` table, so a
   picture added offline uploads later. A device that never comes back online

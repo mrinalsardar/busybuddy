@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -27,18 +28,22 @@ const productImageBucket = 'product-images';
 ///   offline. ProductDao queues its upload in the same transaction as the
 ///   product row (`image_queue`).
 /// - [uploadPending] and [deletePending] drain that queue. SupabaseConnector
-///   calls them from `uploadData`: uploads before the product rows and
-///   deletions after them. A file that cannot be moved now stays queued and
-///   never blocks the rows, so another device can briefly see a path whose
-///   file is missing; [resolve] shows the placeholder until it is uploaded.
+///   calls them from `uploadData` after the rows (so a new shop exists
+///   before its files), and again on a timer while a file is left. Another
+///   device can see a path before its file exists; [resolve] returns null and
+///   the placeholder shows until the file arrives. A Storage problem never
+///   blocks the rows.
 /// - [resolve] gives a file for display: the local copy, or else a download on
 ///   demand (kept as the local copy), or null when it cannot be had.
 class ProductImageStore {
   /// [client] is null when no backend is configured: images then stay on the
   /// device. [directory] is DatabaseHelper.productImageDir.
-  ProductImageStore(this.client, {required this.directory});
+  ProductImageStore(this.client, {required this.directory, this.requestTimeout = const Duration(seconds: 15)});
 
   final SupabaseClient? client;
+
+  /// Longest wait for one Storage request; a timeout counts as retryable.
+  final Duration requestTimeout;
   final Future<Directory> Function() directory;
 
   /// A new storage path for an image of [productId].
@@ -96,13 +101,15 @@ class ProductImageStore {
     }
   }
 
-  /// Uploads the queued image files. A network error or a server outage leaves
-  /// the file queued for the next run and is not thrown, so Storage problems
+  /// Uploads the queued image files. A network error, a timeout or a server
+  /// outage leaves the file queued and is not thrown, so Storage problems
   /// never block the sync of rows; a rejection that retrying cannot fix is
-  /// recorded in `upload_error` and skipped.
-  Future<void> uploadPending(PowerSyncDatabase db) async {
+  /// recorded in `upload_error` and skipped. Returns whether a file is left to
+  /// retry.
+  Future<bool> uploadPending(PowerSyncDatabase db) async {
     final client = this.client;
-    if (client == null) return;
+    if (client == null) return false;
+    var left = false;
     for (final row in await db.getAll("SELECT id, path FROM image_queue WHERE op = ? ORDER BY created_at", [imageUpload])) {
       final id = row['id'] as String;
       final path = row['path'] as String;
@@ -113,31 +120,39 @@ class ProductImageStore {
         continue;
       }
       try {
-        await client.storage.from(productImageBucket).uploadBinary(
+        await client.storage
+            .from(productImageBucket)
+            .uploadBinary(
               path,
               await file.readAsBytes(),
               fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: false),
-            );
+            )
+            .timeout(requestTimeout);
       } on StorageException catch (e) {
         // 409: already there, from an upload whose queue row was not removed.
         if (e.statusCode != '409') {
           if (!isPermanentStorageError(e)) {
             debugPrint('Product image upload postponed ($path): ${e.statusCode} ${e.message}');
+            left = true;
             continue;
           }
           await _recordFailure(db, imageUpload, path, e);
         }
       } catch (e) {
         debugPrint('Product image upload postponed ($path): $e');
+        left = true;
         continue;
       }
       await _dequeue(db, id);
     }
+    return left;
   }
 
   /// Removes the queued image files, from the server and from this device. A
-  /// failed removal stays queued for the next run, as in [uploadPending].
-  Future<void> deletePending(PowerSyncDatabase db) async {
+  /// failed removal stays queued, as in [uploadPending], which also describes
+  /// the result.
+  Future<bool> deletePending(PowerSyncDatabase db) async {
+    var left = false;
     for (final row in await db.getAll("SELECT id, path FROM image_queue WHERE op = ? ORDER BY created_at", [imageDelete])) {
       final path = row['path'] as String;
       try {
@@ -149,20 +164,23 @@ class ProductImageStore {
       if (client != null) {
         try {
           // Removing a file that is not there succeeds.
-          await client.storage.from(productImageBucket).remove([path]);
+          await client.storage.from(productImageBucket).remove([path]).timeout(requestTimeout);
         } on StorageException catch (e) {
           if (!isPermanentStorageError(e)) {
             debugPrint('Product image removal postponed ($path): ${e.statusCode} ${e.message}');
+            left = true;
             continue;
           }
           await _recordFailure(db, imageDelete, path, e);
         } catch (e) {
           debugPrint('Product image removal postponed ($path): $e');
+          left = true;
           continue;
         }
       }
       await _dequeue(db, row['id'] as String);
     }
+    return left;
   }
 
   Future<void> _dequeue(PowerSyncDatabase db, String id) => db.execute('DELETE FROM image_queue WHERE id = ?', [id]);
@@ -176,12 +194,14 @@ class ProductImageStore {
     );
   }
 
-  /// Whether Storage rejected a request for good: a 4xx other than timeout
-  /// (408) and rate limit (429), e.g. 403 (not a member of the shop), 413 (too
-  /// large) or 415 (not a JPEG). Anything else, such as a 5xx or an expired
-  /// token (401), is retried.
+  /// Whether Storage rejected a request for good: 400 and 404 (bad request,
+  /// missing bucket), 413 (too large), 415 (not a JPEG) or a 403 that names
+  /// row-level security (not a member of the shop). Everything else is retried:
+  /// a 5xx, 401, 408, 429, and a 403 that is really an expired or invalid token
+  /// (Storage answers those with status 403 and a JWT message).
   static bool isPermanentStorageError(StorageException e) {
     final status = int.tryParse(e.statusCode ?? '');
-    return status != null && status >= 400 && status < 500 && status != 401 && status != 408 && status != 429;
+    if (status == 400 || status == 404 || status == 413 || status == 415) return true;
+    return status == 403 && e.message.toLowerCase().contains('row-level security');
   }
 }
