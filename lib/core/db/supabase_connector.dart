@@ -110,9 +110,9 @@ class SupabaseConnector extends PowerSyncBackendConnector {
       return uploads || deletions;
     });
     _imageDrain = run.then((_) {}, onError: (_) {});
+    final left = await run;
     _imageRetry?.cancel();
-    _imageRetry = null;
-    if (await run) _imageRetry = Timer(imageRetryDelay, () => _retryImages(database));
+    _imageRetry = left ? Timer(imageRetryDelay, () => _retryImages(database)) : null;
   }
 
   Future<void> _retryImages(PowerSyncDatabase database) async {

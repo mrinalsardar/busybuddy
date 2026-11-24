@@ -502,6 +502,18 @@ void main() {
       expect(backend.requests.length, seen);
     });
 
+    test('overlapping drains leave a single timer', () async {
+      final db = await DatabaseHelper().database;
+      backend.reply = (r) => r.isStorage ? 503 : null;
+      await Future.wait([connector.uploadData(db), connector.uploadData(db)]);
+      final before = posts().length;
+
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+
+      expect(posts().length - before, lessThanOrEqualTo(4));
+      expect(posts().length - before, greaterThanOrEqualTo(1));
+    });
+
     test('never runs more than one timer', () async {
       final db = await DatabaseHelper().database;
       backend.reply = (r) => r.isStorage ? 503 : null;
