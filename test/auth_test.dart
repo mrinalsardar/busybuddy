@@ -11,6 +11,7 @@ import 'package:busybuddy/features/auth/screens/login_screen.dart';
 import 'package:busybuddy/features/auth/screens/syncing_screen.dart';
 import 'package:busybuddy/features/profile/screens/join_shop_screen.dart';
 import 'package:busybuddy/features/profile/screens/profile_type_screen.dart';
+import 'package:busybuddy/features/sales/providers/sales_providers.dart';
 import 'package:busybuddy/features/settings/screens/settings_screen.dart';
 import 'package:busybuddy/main.dart';
 import 'package:material_ui/material_ui.dart';
@@ -154,6 +155,25 @@ void main() {
       expect(await dao.getMemberRole('a', 'user-1'), 'staff');
       expect(await dao.getMemberRole('a', 'user-2'), isNull);
     });
+  });
+
+  test('the cart is cleared when a different account takes over the device', () async {
+    final auth = FakeAuth(user: 'user-1');
+    final container = ProviderContainer(overrides: [
+      authRepositoryProvider.overrideWithValue(auth),
+      businessProfileDaoProvider.overrideWithValue(FakeProfileDao()),
+      syncStateProvider.overrideWith((_) => const Stream<SyncState>.empty()),
+    ]);
+    addTearDown(container.dispose);
+    final cart = container.read(cartProvider);
+    container.read(authProvider);
+    const laces = Product(id: 'p1', profileId: 'shop-1', name: 'Laces', priceMinor: 100, stockQty: 5);
+    expect(cart.addItem(laces), isTrue);
+
+    await auth.signOut();
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(authProvider), isNull);
+    expect(cart.items, isEmpty);
   });
 
   group('screens', () {

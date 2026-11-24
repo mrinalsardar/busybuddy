@@ -311,6 +311,18 @@ void main() {
       expect(await queueEmpty(), isFalse);
     });
 
+    test('a failing startup check does not throw, so the app still starts signed out', () async {
+      final sync = SyncSession(server.client, connector, connectDatabase: () async => throw StateError('disk full'));
+      final users = <String?>[];
+      sync.userChanges.listen(users.add);
+
+      await sync.init();
+      await sync.idle;
+
+      expect(users, [null]);
+      expect(sync.conflict, isNull);
+    });
+
     test('an empty queue clears the old data for the new account', () async {
       final sync = await session();
       await upload();
