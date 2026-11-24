@@ -58,6 +58,9 @@ select case when (select ok from storage_installed) then lives_ok(
   'staff can add an image')
 else skip('storage not installed', 1) end;
 
+-- Storage blocks direct deletes unless this flag is set (RLS still applies).
+set local storage.allow_delete_query = 'true';
+
 -- Owner B (another shop) sees and changes nothing of shop A.
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-0000-0000-000000000001"}';
 select case when (select ok from storage_installed) then is_empty(
