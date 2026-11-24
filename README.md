@@ -51,7 +51,7 @@ The app reads three values at build time, passed with `--dart-define`:
 | `SUPABASE_ANON_KEY` | Supabase anon (publishable) key |
 | `POWERSYNC_URL` | URL of the PowerSync instance |
 
-If any of the three is missing, the app starts without a backend. There is then no sign-in and no sync, and the app only shows and stores data on the device. Sign-in and sync need a Supabase project and a PowerSync instance that are set up as described in [`supabase/README.md`](supabase/README.md). Do not commit real values.
+If any of the three is missing, the app starts without a backend. There is then no sign-in and no sync, and the app only shows and stores data on the device. Sign-in and sync need a Supabase project and a PowerSync instance. To run both on your computer, follow [Run the backend locally](#run-the-backend-locally). For a hosted project, see [`supabase/README.md`](supabase/README.md). Do not commit real values.
 
 ## Running
 
@@ -75,7 +75,7 @@ flutter run -d <device-id> \
 
 Android is the supported development platform. The repository also contains `ios/`, `linux/`, `macos/`, `web/` and `windows/` project folders from the Flutter template, which have not been verified.
 
-When the app runs on an Android emulator, `127.0.0.1` is the emulator itself. Reach a service on your computer, such as the local Supabase stack, at `10.0.2.2` instead.
+When the app runs on an Android emulator, `127.0.0.1` is the emulator itself. Reach a service on your computer, such as the local Supabase stack, at `10.0.2.2` instead (see [Run the backend locally](#run-the-backend-locally)).
 
 ### Tests and analysis
 
@@ -91,18 +91,87 @@ The database tests open a PowerSync database on a temporary file.
 
 The server side lives in `supabase/` and `powersync/`. [`supabase/README.md`](supabase/README.md) describes the schema, access rules, server functions, the upload contract and the PowerSync setup. Read it before you set up a backend.
 
-To run Supabase locally (needs the Supabase CLI and Docker), run these in the repository root:
+### Run the backend locally
+
+This starts Supabase and PowerSync on your computer, so sign-in and sync work without any hosted account. You need the Supabase CLI and Docker. Run every command from the repository root, except where a step says otherwise.
+
+**1. Start Supabase.** Sign-in and sync need only the database, Auth, the API gateway (`kong`), `rest` and the mail container. Exclude the rest, so the stack needs less RAM and starts faster:
 
 ```
-supabase start        # local stack; applies migrations on first start
-supabase db reset     # re-create the database from supabase/migrations/
-supabase test db      # run the pgTAP tests in supabase/tests/
-supabase stop
+supabase start -x realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,studio,postgres-meta
 ```
 
-`supabase start` prints the local API URL and keys. The local stack sends sign-in emails to Inbucket at http://127.0.0.1:54324, where you can read the one-time codes.
+The first start pulls every image, including the excluded ones, which takes a few minutes. It applies `supabase/migrations/` and prints the API URL (`http://127.0.0.1:54321`), the **Publishable** key (`sb_publishable_...`) and the database URL (`postgresql://postgres:postgres@127.0.0.1:54322/postgres`). `supabase status` prints them again.
 
-PowerSync is not part of the local Supabase stack. The sync rules are in [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml), with one bucket per shop. A PowerSync instance must be pointed at the Supabase database and given these rules. The steps are in the PowerSync section of `supabase/README.md`.
+`supabase start` with no `-x` also works, but starts ten or more services and needs several GB of RAM.
+
+*Windows with WSL:* the Supabase CLI needs a Docker socket. Without Docker Desktop's WSL integration (Settings, Resources, WSL integration, enable your distro), there is none in WSL, and a project path inside the WSL distro fails at container creation with `accessing specified distro mount service: stat /run/guest-services/distro-services/...sock: no such file or directory`. Either enable the integration, or run the CLI on the Windows side from a copy of the project on a Windows path, for example in PowerShell:
+
+```
+$dst = "$env:TEMP\busybuddy-backend"
+New-Item -ItemType Directory $dst
+Copy-Item -Recurse <path-to-repo>\supabase, <path-to-repo>\powersync $dst
+cd $dst
+npx supabase start -x realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,studio,postgres-meta
+```
+
+Use `npx supabase ...` in place of `supabase ...` in the steps below, and `docker` from that same Windows shell.
+
+**2. Create the PowerSync database role and storage database.** PowerSync reads the Supabase database with its own role and keeps its bucket storage in a second database, so no MongoDB is needed. Run these as three separate commands. `psql -c` with several statements runs them as one transaction, and `create database` cannot run inside one, so a combined call rolls the role back and PowerSync later fails with `password authentication failed for user "powersync_role"`.
+
+```
+docker exec supabase_db_busybuddy psql -U postgres -c "create role powersync_role with replication bypassrls login password 'psync'"
+docker exec supabase_db_busybuddy psql -U postgres -c "grant select on all tables in schema public to powersync_role"
+docker exec supabase_db_busybuddy psql -U postgres -c "create database powersync_storage"
+```
+
+The password `psync` is the one in `powersync/config.local.yaml`. It is for local use only.
+
+**3. Start the PowerSync service.** [`powersync/config.local.yaml`](powersync/config.local.yaml) points the service at the local database (`supabase_db_busybuddy`), keeps bucket storage in `powersync_storage`, and checks sign-in tokens against the local Auth JWKS endpoint (`http://supabase_kong_busybuddy:8000/auth/v1/.well-known/jwks.json`, audience `authenticated`). The container must join the Supabase Docker network, so these hostnames resolve:
+
+```
+docker run -d --name bb_powersync --network supabase_network_busybuddy -p 8080:8080 \
+  -v "$PWD/powersync:/config" \
+  -e POWERSYNC_CONFIG_PATH=/config/config.local.yaml \
+  journeyapps/powersync-service:latest
+```
+
+On Windows, replace `$PWD/powersync` with the Windows path of the `powersync` folder, for example `"$env:TEMP\busybuddy-backend\powersync"` in PowerShell.
+
+Check `docker logs bb_powersync`. It should show `Replicating "public"."<table>"` for each publication table and then `Activated new replication stream`. A warning about `bucket_definitions` being deprecated is expected. If the image pull fails with `unexpected EOF`, run `docker pull journeyapps/powersync-service:latest` again.
+
+**4. Run the app against the stack.** Pass the three values with `--dart-define`. `SUPABASE_ANON_KEY` takes the **Publishable** key from step 1. An Android emulator cannot reach your computer at `127.0.0.1`, so use `10.0.2.2` there. A physical device needs your computer's LAN address instead.
+
+```
+flutter run -d <device-id> \
+  --dart-define=SUPABASE_URL=http://10.0.2.2:54321 \
+  --dart-define=SUPABASE_ANON_KEY=<publishable-key> \
+  --dart-define=POWERSYNC_URL=http://10.0.2.2:8080
+```
+
+On a desktop or other target that runs on your computer, use `http://127.0.0.1:54321` and `http://127.0.0.1:8080`.
+
+**5. Read the sign-in code.** The local stack sends emails to Mailpit (the container is still named `supabase_inbucket_busybuddy`). Open http://127.0.0.1:54324 and read the 6-digit code, or use its API:
+
+```
+curl "http://127.0.0.1:54324/api/v1/search?query=to:<email>"      # find the message ID
+curl "http://127.0.0.1:54324/api/v1/message/<ID>"                  # the code is in the Text field
+```
+
+**Stop and reset.**
+
+```
+docker rm -f bb_powersync
+supabase stop                 # add --no-backup to also delete the local data
+supabase db reset             # re-create the database from supabase/migrations/
+supabase test db              # run the pgTAP tests in supabase/tests/
+```
+
+After `supabase db reset` or `supabase stop --no-backup`, repeat steps 2 and 3 (the role and `powersync_storage` are gone). Run `docker rm -f bb_powersync` first.
+
+**Testing a forced sign-out.** `jwt_expiry` in `supabase/config.toml` is 3600 seconds, so a revoked session shows up in the app only after up to an hour. For a test, change it to `jwt_expiry = 60` before step 1 and do not commit that change. Then `delete from auth.sessions` (through `docker exec supabase_db_busybuddy psql -U postgres -c "delete from auth.sessions"`) signs the app out within about a minute.
+
+The server side is described in [`supabase/README.md`](supabase/README.md): schema, access rules, server functions, the upload contract and the sync rules. The sync rules are in [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml), with one bucket per shop. The CLI prints that all local services bind to `0.0.0.0` and use shared default keys and passwords, so run this stack only on a network you trust. For a hosted PowerSync instance, create your own config: `config.local.yaml` is for the local stack only.
 
 ## Project layout
 
@@ -115,7 +184,7 @@ lib/
                    sales, settings
 test/              unit and database tests
 supabase/          migrations, pgTAP tests, email templates, config and server docs
-powersync/         PowerSync sync rules
+powersync/         PowerSync sync rules and the local service config
 android/ ios/ linux/ macos/ web/ windows/   Flutter platform projects
 ```
 
