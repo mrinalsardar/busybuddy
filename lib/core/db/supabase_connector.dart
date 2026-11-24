@@ -5,6 +5,7 @@ import 'package:powersync/powersync.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'db_time.dart';
+import 'local_owner.dart';
 
 /// Connects the PowerSync database to Supabase: credentials come from the
 /// Supabase session, and [uploadData] drains the local upload queue following
@@ -59,8 +60,15 @@ class SupabaseConnector extends PowerSyncBackendConnector {
   Future<void> uploadData(PowerSyncDatabase database) async {
     // Without a session, requests run as anon, which the server refuses
     // (42501); that is not the change's fault, so keep the queue for later.
-    if (client.auth.currentSession == null) {
+    final user = client.auth.currentUser;
+    if (client.auth.currentSession == null || user == null) {
       throw StateError('Not signed in; uploads wait for a Supabase session');
+    }
+    // Queued changes belong to the account that made them: under another
+    // account's token the server would reject them for good.
+    final owner = await LocalOwner.read(database);
+    if (owner != null && owner.userId != user.id) {
+      throw StateError('Queued changes belong to another account; uploads wait for it to sign in');
     }
     while (true) {
       final transaction = await database.getNextCrudTransaction();

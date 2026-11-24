@@ -24,21 +24,30 @@ class BusinessProfileDao extends BaseDao<BusinessProfile> {
       throw UnsupportedError('A shop cannot be deleted; clear local data instead');
 
   /// The shop to work in: the first shop [userId] is a member of, by when
-  /// they joined. Without a [userId] (app without a backend), or while no
-  /// membership has synced yet, the first local profile. That covers a shop
-  /// created offline whose membership the server has not sent back yet.
+  /// they joined. Without a [userId] (app without a backend), the first local
+  /// profile. While no membership has synced yet, the local shops count only
+  /// if [userId] owns the data on this device (see LocalOwner): that covers a
+  /// shop created offline whose membership the server has not sent back yet,
+  /// and never returns another account's shop.
   /// Null when there is no profile: onboarding is needed.
   Future<BusinessProfile?> getActiveProfile({String? userId}) async {
-    if (userId != null) {
-      final row = await (await db).getOptional(
-          'SELECT p.* FROM business_profile p '
-          'JOIN shop_member m ON m.profile_id = p.id '
-          'WHERE m.user_id = ? ORDER BY m.created_at, p.id LIMIT 1',
-          [userId]);
-      if (row != null) return fromMap(row);
+    final database = await db;
+    if (userId == null) {
+      final list = await query(orderBy: 'created_at, id', limit: 1);
+      return list.isEmpty ? null : list.first;
     }
-    final list = await query(orderBy: 'created_at, id', limit: 1);
-    return list.isEmpty ? null : list.first;
+    final member = await database.getOptional(
+        'SELECT p.* FROM business_profile p '
+        'JOIN shop_member m ON m.profile_id = p.id '
+        'WHERE m.user_id = ? ORDER BY m.created_at, p.id LIMIT 1',
+        [userId]);
+    if (member != null) return fromMap(member);
+    final owned = await database.getOptional(
+        'SELECT p.* FROM business_profile p '
+        'WHERE EXISTS (SELECT 1 FROM local_owner o WHERE o.user_id = ?) '
+        'ORDER BY p.created_at, p.id LIMIT 1',
+        [userId]);
+    return owned == null ? null : fromMap(owned);
   }
 
   /// The role of [userId] in the shop [profileId], or null if the membership

@@ -217,6 +217,12 @@ const schema = Schema([
     Column.text('google_account_id'),
     Column.text('created_at'),
   ]),
+  // Local only: the account that owns the data on this device (one row, see
+  // LocalOwner). Cleared with the data.
+  Table.localOnly('local_owner', [
+    Column.text('user_id'),
+    Column.text('email'),
+  ]),
   // Local only: uploads the server rejected permanently (see
   // SupabaseConnector). They are skipped so later changes still upload.
   Table.localOnly('upload_error', [

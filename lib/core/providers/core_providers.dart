@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_repository.dart';
 import '../db/database_helper.dart';
+import '../db/sync_session.dart';
 import '../dao/business_profile_dao.dart';
 import '../dao/product_dao.dart';
 import '../dao/product_variant_dao.dart';
@@ -46,6 +47,26 @@ class AuthNotifier extends StateNotifier<String?> {
   }
 
   late final StreamSubscription<String?> _sub;
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
+  }
+}
+
+/// Set while a different account signed in over the previous account's
+/// unsynced changes. The router holds the app on the conflict screen.
+final ownerConflictProvider = StateNotifierProvider<OwnerConflictNotifier, OwnerConflict?>(
+  (ref) => OwnerConflictNotifier(ref.watch(authRepositoryProvider)),
+);
+
+class OwnerConflictNotifier extends StateNotifier<OwnerConflict?> {
+  OwnerConflictNotifier(AuthRepository repo) : super(repo.conflict) {
+    _sub = repo.conflictChanges.listen((c) => state = c);
+  }
+
+  late final StreamSubscription<OwnerConflict?> _sub;
 
   @override
   void dispose() {

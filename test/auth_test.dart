@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:busybuddy/core/auth/auth_repository.dart';
 import 'package:busybuddy/core/dao/business_profile_dao.dart';
 import 'package:busybuddy/core/db/database_helper.dart';
+import 'package:busybuddy/core/db/local_owner.dart';
+import 'package:busybuddy/core/db/sync_session.dart';
 import 'package:busybuddy/core/models/models.dart';
 import 'package:busybuddy/core/providers/core_providers.dart';
 import 'package:busybuddy/features/auth/screens/login_screen.dart';
@@ -46,6 +48,15 @@ class FakeAuth implements AuthRepository {
     _userId = 'user-1';
     _changes.add(_userId);
   }
+
+  @override
+  OwnerConflict? get conflict => null;
+  @override
+  Stream<OwnerConflict?> get conflictChanges => const Stream.empty();
+  @override
+  Future<void> discardPendingChanges() async {}
+  @override
+  Future<void> leaveForPreviousAccount() async {}
 
   @override
   Future<void> signOut() async {
@@ -113,10 +124,24 @@ void main() {
       expect((await dao.getActiveProfile(userId: 'user-1'))?.id, 'b');
     });
 
-    test('falls back to the local shop while no membership has synced', () async {
+    Future<void> own(String userId) async => LocalOwner.write(await DatabaseHelper().database, userId, null);
+
+    test('falls back to the local shop of the account that owns the data', () async {
       await addShop('a', '2026-01-01T00:00:00.000Z');
+      await own('user-1');
       expect((await dao.getActiveProfile(userId: 'user-1'))?.id, 'a');
       expect((await dao.getActiveProfile())?.id, 'a');
+    });
+
+    test('never falls back to the shop of another account', () async {
+      await addShop('a', '2026-01-01T00:00:00.000Z');
+      await own('user-1');
+      expect(await dao.getActiveProfile(userId: 'user-2'), isNull);
+    });
+
+    test('does not fall back while nobody owns the data', () async {
+      await addShop('a', '2026-01-01T00:00:00.000Z');
+      expect(await dao.getActiveProfile(userId: 'user-1'), isNull);
     });
 
     test('is null without any shop', () async {

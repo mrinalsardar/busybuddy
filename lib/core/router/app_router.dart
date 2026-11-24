@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/core_providers.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/owner_conflict_screen.dart';
 import '../../features/auth/screens/syncing_screen.dart';
 import '../../features/profile/screens/join_shop_screen.dart';
 import '../../features/profile/screens/profile_type_screen.dart';
@@ -18,13 +19,15 @@ import '../../features/settings/screens/settings_screen.dart';
 /// `refreshListenable` instead of rebuilding the router, which would reset
 /// navigation (e.g. bounce out of Settings after changing a setting).
 ///
-/// With a backend: signed out goes to /login; signed in without a shop waits
+/// With a backend: another account's unsynced changes on the device hold the
+/// app at /conflict; signed out goes to /login; signed in without a shop waits
 /// at /syncing for the first sync, then goes to /onboarding (create a shop, or
 /// join one at /onboarding/join). Without a backend there is no login or sync.
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
   ref.listen(activeProfileProvider, (_, _) => refresh.value++);
   ref.listen(authProvider, (_, _) => refresh.value++);
+  ref.listen(ownerConflictProvider, (_, _) => refresh.value++);
 
   final router = GoRouter(
     initialLocation: '/',
@@ -36,6 +39,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       final profile = profileAsync.valueOrNull;
       final currentPath = state.uri.path;
       bool on(String path) => currentPath == path || currentPath.startsWith('$path/');
+
+      // Another account's unsynced changes are on this device: nothing else is
+      // reachable until the user chooses what happens to them.
+      if (ref.read(ownerConflictProvider) != null) {
+        return on('/conflict') ? null : '/conflict';
+      }
+      if (on('/conflict')) return '/';
 
       if (authEnabled) {
         if (!signedIn) return on('/login') ? null : '/login';
@@ -59,6 +69,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/conflict', builder: (_, _) => const OwnerConflictScreen()),
       GoRoute(path: '/syncing', builder: (_, _) => const SyncingScreen()),
 
       // ── Onboarding ───────────────────────────────
