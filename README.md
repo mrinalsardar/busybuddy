@@ -111,11 +111,11 @@ flutter emulators --launch <emulator-id>
 flutter run -d <device-id> $(dev/defines.sh emulator)
 ```
 
-The first `dev/up.sh` pulls the images, which takes a few minutes. It starts the services in this order: Postgres, Auth, a one-shot `setup` job, then PowerSync. `setup` applies `supabase/migrations/` once Auth has created its schema, creates the `powersync_role` database role and the `powersync_storage` database, and exits. PowerSync reads the committed [`powersync/config.local.yaml`](powersync/config.local.yaml) and [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml) unchanged: the Compose services use the container names that config expects. All ports are published on `127.0.0.1` only:
+The first `dev/up.sh` pulls the images, which takes a few minutes. It starts the services in this order: Postgres, Auth, Storage, a one-shot `setup` job, then PowerSync. `setup` applies `supabase/migrations/` once Auth has created its schema, creates the `powersync_role` database role and the `powersync_storage` database, and exits. PowerSync reads the committed [`powersync/config.local.yaml`](powersync/config.local.yaml) and [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml) unchanged: the Compose services use the container names that config expects. All ports are published on `127.0.0.1` only:
 
 | Service | Address |
 |---|---|
-| API gateway (`/auth/v1`, `/rest/v1`) | http://127.0.0.1:54321 |
+| API gateway (`/auth/v1`, `/rest/v1`, `/storage/v1`) | http://127.0.0.1:54321 |
 | Postgres | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
 | Mailpit inbox | http://127.0.0.1:54324 |
 | PowerSync | http://127.0.0.1:8080 |
