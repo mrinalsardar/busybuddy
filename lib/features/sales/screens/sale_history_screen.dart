@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/models/sale.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
 import '../../../core/providers/core_providers.dart';
@@ -63,12 +64,19 @@ class SaleHistoryScreen extends ConsumerWidget {
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (_, i) {
                 final s = sales[i];
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceCard,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                return Material(
+                  color: AppTheme.surfaceCard,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  child: InkWell(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  onTap: () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    showDragHandle: true,
+                    builder: (_) => SaleDetailSheet(sale: s),
                   ),
+                  child: Padding(
+                  padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
                       // Icon
@@ -117,6 +125,8 @@ class SaleHistoryScreen extends ConsumerWidget {
                               color: AppTheme.success)),
                     ],
                   ),
+                  ),
+                  ),
                 );
               },
             ),
@@ -136,6 +146,88 @@ class SaleHistoryScreen extends ConsumerWidget {
       child: Text(text,
           style: TextStyle(
               fontSize: 10, fontWeight: FontWeight.w700, color: color)),
+    );
+  }
+}
+
+/// Line items, payment, date and totals of one recorded sale.
+class SaleDetailSheet extends ConsumerWidget {
+  final Sale sale;
+  const SaleDetailSheet({super.key, required this.sale});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final money = ref.watch(activeProfileProvider).value?.money ?? MoneyFormat.fallback;
+    final isOwner = ref.watch(isOwnerProvider);
+    final itemsAsync = ref.watch(saleItemsProvider(sale.id));
+    final dateFmt = DateFormat('dd MMM yyyy, hh:mm a');
+    const bold = TextStyle(fontWeight: FontWeight.w700);
+
+    Widget row(String label, String value, {TextStyle? style}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [Text(label, style: style), Text(value, style: style)],
+          ),
+        );
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          children: [
+            Text(dateFmt.format(sale.createdAt),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(sale.paymentMethod.toUpperCase(),
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+            const Divider(height: 24),
+            itemsAsync.when(
+              loading: () => const Padding(
+                  padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
+              error: (e, _) => Text('Error: $e'),
+              data: (items) => items.isEmpty
+                  ? const Text('No items recorded for this sale.')
+                  : Column(
+                      children: [
+                        for (final i in items)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(i.productName, style: bold),
+                                      Text('${i.qty} × ${money.format(i.unitPriceMinor)}',
+                                          style: TextStyle(color: AppTheme.textSecondary)),
+                                      if (isOwner)
+                                        Text('Cost ${money.format(i.costPriceMinor)} each',
+                                            style: TextStyle(
+                                                fontSize: 12, color: AppTheme.textSecondary)),
+                                    ],
+                                  ),
+                                ),
+                                Text(money.format(i.lineTotalMinor), style: bold),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+            const Divider(height: 24),
+            row('Subtotal', money.format(sale.subtotalMinor)),
+            if (sale.discountMinor > 0) row('Discount', '-${money.format(sale.discountMinor)}'),
+            if (sale.taxAmountMinor > 0) row('Tax', money.format(sale.taxAmountMinor)),
+            row('Total', money.format(sale.totalMinor),
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          ],
+        ),
+      ),
     );
   }
 }
