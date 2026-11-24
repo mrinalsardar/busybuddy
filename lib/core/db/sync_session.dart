@@ -34,7 +34,9 @@ class SyncSession {
       : _connectDatabase = connectDatabase ?? (() => DatabaseHelper().connect(connector)) {
     // Emits initialSession first, so a stored session connects at startup.
     _client.auth.onAuthStateChange.listen((state) {
-      _enqueue(() => _apply(state.session)).catchError((Object _) {});
+      _enqueue(() => _apply(state.session)).catchError((Object _) {
+        _users.add(null);
+      });
     });
   }
 
@@ -64,7 +66,9 @@ class SyncSession {
 
   /// Checks the stored session. Call once at startup, before the first
   /// screen, so a pending [conflict] is known before anything is shown.
-  Future<void> init() => _enqueue(() => _apply(_client.auth.currentSession));
+  Future<void> init() => _enqueue(() => _apply(_client.auth.currentSession)).catchError((Object _) {
+        _users.add(null);
+      });
 
   /// Stops syncing and deletes the local data, after the steps queued so far.
   /// Throws if the data could not be deleted.

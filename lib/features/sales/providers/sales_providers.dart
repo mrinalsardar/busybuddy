@@ -135,8 +135,12 @@ class CartNotifier extends ChangeNotifier {
   }
 }
 
-final cartProvider = ChangeNotifierProvider((ref) => CartNotifier(
-    allowOversell: () => ref.read(activeProfileProvider).valueOrNull?.allowOversell ?? false));
+final cartProvider = ChangeNotifierProvider((ref) {
+  final cart = CartNotifier(
+      allowOversell: () => ref.read(activeProfileProvider).valueOrNull?.allowOversell ?? false);
+  ref.listen(authProvider, (_, __) => cart.clear());
+  return cart;
+});
 
 // ── Today's total (minor units) ────────────────────────
 final todayTotalProvider = FutureProvider<int>((ref) async {
