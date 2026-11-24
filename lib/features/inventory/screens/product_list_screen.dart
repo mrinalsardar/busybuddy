@@ -15,6 +15,7 @@ class ProductListScreen extends ConsumerWidget {
     final profile = ref.watch(activeProfileProvider).value;
     final isOwner = ref.watch(isOwnerProvider);
     final search = ref.watch(inventorySearchProvider);
+    final category = ref.watch(inventoryCategoryFilterProvider);
     final avgPrices = ref.watch(avgSellingPriceProvider).value ?? const {};
 
     return Scaffold(
@@ -58,6 +59,14 @@ class ProductListScreen extends ConsumerWidget {
               error: (e, _) => Center(child: Text('Error: $e')),
               data: (products) {
                 if (products.isEmpty) {
+                  if (search.isNotEmpty || category != null) {
+                    return _NoMatchState(
+                      onClear: () {
+                        ref.read(inventorySearchProvider.notifier).state = '';
+                        ref.read(inventoryCategoryFilterProvider.notifier).state = null;
+                      },
+                    );
+                  }
                   return _EmptyState(
                     onAdd: () => context.go('/inventory/add'),
                   );
@@ -275,6 +284,43 @@ class _ProductCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoMatchState extends StatelessWidget {
+  final VoidCallback onClear;
+  const _NoMatchState({required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off_rounded,
+                size: 48, color: AppTheme.textSecondary),
+            const SizedBox(height: 16),
+            Text('No matching products',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary)),
+            const SizedBox(height: 8),
+            Text('Nothing matches your search or filter',
+                style: TextStyle(
+                    fontWeight: FontWeight.w400,
+                    fontSize: 14, color: AppTheme.textSecondary)),
+            const SizedBox(height: 24),
+            OutlinedButton(
+              onPressed: onClear,
+              child: const Text('Clear search and filter'),
+            ),
+          ],
         ),
       ),
     );

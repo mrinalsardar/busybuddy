@@ -102,11 +102,21 @@ class _JoinShopScreenState extends ConsumerState<JoinShopScreen> {
             ),
             onSubmitted: (_) => _join(),
           ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: AppTheme.error)),
-          ],
-          const SizedBox(height: 24),
+          // Fixed-height slot so the Join button does not move when an error shows.
+          SizedBox(
+            key: const Key('joinError'),
+            height: 60,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _error == null
+                  ? null
+                  : Text(_error!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppTheme.error)),
+            ),
+          ),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 56,
