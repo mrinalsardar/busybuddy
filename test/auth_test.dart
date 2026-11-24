@@ -280,9 +280,12 @@ void main() {
       await settle(tester);
       expect(find.byType(JoinShopScreen), findsOneWidget);
 
+      final joinY = tester.getTopLeft(find.text('Join shop')).dy;
       await tester.enterText(find.byKey(const Key('inviteCode')), 'BAD');
       await tester.tap(find.text('Join shop'));
       await settle(tester);
+      // The error appears without moving the button.
+      expect(tester.getTopLeft(find.text('Join shop')).dy, joinY);
       expect(find.text('That invite code is not valid.'), findsOneWidget);
       expect(auth.joined, isEmpty);
 

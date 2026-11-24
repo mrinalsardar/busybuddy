@@ -4,6 +4,7 @@ import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
+import '../../../core/utils/plural.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../inventory/providers/inventory_providers.dart';
 import '../providers/sales_providers.dart';
@@ -302,11 +303,13 @@ class _CartPanel extends ConsumerWidget {
                                       overflow: TextOverflow.ellipsis),
                                   Row(
                                     children: [
-                                      Text('@ ${money.format(ci.unitPriceMinor)}',
+                                      Flexible(child: Text('@ ${money.format(ci.unitPriceMinor)}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                               fontWeight: FontWeight.w400,
                                               fontSize: 11,
-                                              color: AppTheme.textSecondary)),
+                                              color: AppTheme.textSecondary))),
                                       const SizedBox(width: 4),
                                       const Icon(Icons.edit_outlined,
                                           size: 12, color: AppTheme.textSecondary),
@@ -342,11 +345,13 @@ class _CartPanel extends ConsumerWidget {
                             ],
                           ),
                           const SizedBox(width: 12),
-                          SizedBox(
-                            width: 70,
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 70),
                             child: Text(
                               money.format(ci.lineTotalMinor),
                               textAlign: TextAlign.end,
+                              maxLines: 1,
+                              softWrap: false,
                               style: TextStyle(
                                   fontSize: 14, fontWeight: FontWeight.w700,
                                   color: AppTheme.textPrimary),
@@ -367,7 +372,7 @@ class _CartPanel extends ConsumerWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${cart.itemCount} items',
+                      Text(countLabel(cart.itemCount, 'item'),
                           style: TextStyle(
                               fontWeight: FontWeight.w400,
                               fontSize: 12, color: AppTheme.textSecondary)),
