@@ -1,0 +1,7 @@
+# no-mistakes validation commands for this repo.
+# The gate's shell has no Flutter on PATH, so each command first adds the SDK
+# from the usual WSL location ($HOME/tools/*) when it exists. If that directory
+# is absent, whatever `flutter` is already on PATH is used.
+commands:
+  test: 'if [ -d "$HOME/tools/flutter/bin" ]; then export PATH="$HOME/tools/flutter/bin:$HOME/tools/jdk/bin:$HOME/tools/android/platform-tools:$PATH" JAVA_HOME="$HOME/tools/jdk" ANDROID_HOME="$HOME/tools/android" ANDROID_SDK_ROOT="$HOME/tools/android"; fi; flutter test'
+  lint: 'if [ -d "$HOME/tools/flutter/bin" ]; then export PATH="$HOME/tools/flutter/bin:$HOME/tools/jdk/bin:$HOME/tools/android/platform-tools:$PATH" JAVA_HOME="$HOME/tools/jdk" ANDROID_HOME="$HOME/tools/android" ANDROID_SDK_ROOT="$HOME/tools/android"; fi; flutter analyze'
