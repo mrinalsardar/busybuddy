@@ -21,8 +21,9 @@ import 'local_owner.dart';
 ///   `update_profile`;
 /// - other tables are upserted, updated and deleted directly;
 /// - product image files queued in `image_queue` go to Supabase Storage (see
-///   [ProductImageStore]): uploads before the product rows that name them,
-///   deletions after.
+///   [ProductImageStore]): uploads are tried before the product rows that name
+///   them, deletions after; a Storage failure leaves the file queued and never
+///   blocks the rows.
 ///
 /// Network and server errors are rethrown, so PowerSync retries the change
 /// later. A change the server rejects for good (a SQLSTATE the README names,

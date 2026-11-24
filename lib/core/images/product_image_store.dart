@@ -27,8 +27,10 @@ const productImageBucket = 'product-images';
 ///   offline. ProductDao queues its upload in the same transaction as the
 ///   product row (`image_queue`).
 /// - [uploadPending] and [deletePending] drain that queue. SupabaseConnector
-///   calls them from `uploadData`: uploads before the product row, so no other
-///   device sees a path whose file is missing, deletions after it.
+///   calls them from `uploadData`: uploads before the product rows and
+///   deletions after them. A file that cannot be moved now stays queued and
+///   never blocks the rows, so another device can briefly see a path whose
+///   file is missing; [resolve] shows the placeholder until it is uploaded.
 /// - [resolve] gives a file for display: the local copy, or else a download on
 ///   demand (kept as the local copy), or null when it cannot be had.
 class ProductImageStore {
@@ -94,9 +96,10 @@ class ProductImageStore {
     }
   }
 
-  /// Uploads the queued image files. A network error or a server outage is
-  /// rethrown (the queue stays, the upload is retried); a rejection that
-  /// retrying cannot fix is recorded in `upload_error` and skipped.
+  /// Uploads the queued image files. A network error or a server outage leaves
+  /// the file queued for the next run and is not thrown, so Storage problems
+  /// never block the sync of rows; a rejection that retrying cannot fix is
+  /// recorded in `upload_error` and skipped.
   Future<void> uploadPending(PowerSyncDatabase db) async {
     final client = this.client;
     if (client == null) return;
@@ -118,15 +121,22 @@ class ProductImageStore {
       } on StorageException catch (e) {
         // 409: already there, from an upload whose queue row was not removed.
         if (e.statusCode != '409') {
-          if (!isPermanentStorageError(e)) rethrow;
+          if (!isPermanentStorageError(e)) {
+            debugPrint('Product image upload postponed ($path): ${e.statusCode} ${e.message}');
+            continue;
+          }
           await _recordFailure(db, imageUpload, path, e);
         }
+      } catch (e) {
+        debugPrint('Product image upload postponed ($path): $e');
+        continue;
       }
       await _dequeue(db, id);
     }
   }
 
-  /// Removes the queued image files, from the server and from this device.
+  /// Removes the queued image files, from the server and from this device. A
+  /// failed removal stays queued for the next run, as in [uploadPending].
   Future<void> deletePending(PowerSyncDatabase db) async {
     for (final row in await db.getAll("SELECT id, path FROM image_queue WHERE op = ? ORDER BY created_at", [imageDelete])) {
       final path = row['path'] as String;
@@ -141,8 +151,14 @@ class ProductImageStore {
           // Removing a file that is not there succeeds.
           await client.storage.from(productImageBucket).remove([path]);
         } on StorageException catch (e) {
-          if (!isPermanentStorageError(e)) rethrow;
+          if (!isPermanentStorageError(e)) {
+            debugPrint('Product image removal postponed ($path): ${e.statusCode} ${e.message}');
+            continue;
+          }
           await _recordFailure(db, imageDelete, path, e);
+        } catch (e) {
+          debugPrint('Product image removal postponed ($path): $e');
+          continue;
         }
       }
       await _dequeue(db, row['id'] as String);

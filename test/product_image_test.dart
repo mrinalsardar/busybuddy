@@ -13,7 +13,7 @@ import 'package:busybuddy/core/db/supabase_connector.dart';
 import 'package:busybuddy/core/images/product_image_store.dart';
 import 'package:busybuddy/core/models/models.dart';
 
-import 'supabase_connector_test.dart' show signIn;
+import 'supabase_connector_test.dart' show sell, signIn;
 import 'test_db.dart';
 
 const profile = BusinessProfile(id: 'profile-1', name: 'Shop', type: BusinessType.general);
@@ -273,10 +273,10 @@ void main() {
 
       test('a server error or no network keeps it queued for a retry', () async {
         backend.reply = (_) => 503;
-        await expectLater(upload(), throwsA(isA<StorageException>()));
+        await upload();
         backend.reply = (_) => null;
         backend.offline = true;
-        await expectLater(upload(), throwsA(isA<SocketException>()));
+        await upload();
 
         expect(await queue(), [
           {'op': 'upload', 'path': path}
@@ -316,7 +316,7 @@ void main() {
       await ProductDao().archive(product.id);
       backend.offline = true;
 
-      await expectLater(store.deletePending(await DatabaseHelper().database), throwsA(isA<SocketException>()));
+      await store.deletePending(await DatabaseHelper().database);
 
       expect(await queue(), [
         {'op': 'delete', 'path': path}
@@ -345,7 +345,7 @@ void main() {
     expect(await queue(), isEmpty);
   });
 
-  test('the connector keeps product changes waiting while a picture cannot upload', () async {
+  test('the connector keeps product changes waiting while the network is down', () async {
     final connector = SupabaseConnector(backend.client, powerSyncUrl: 'http://powersync.test', images: store);
     final db = await DatabaseHelper().database;
     final path = await store.save(profile.id, product.id, bytes('jpeg'));
@@ -355,6 +355,23 @@ void main() {
     await expectLater(connector.uploadData(db), throwsA(anything));
 
     expect(await db.getNextCrudTransaction(), isNotNull);
+    expect(await queue(), [
+      {'op': 'upload', 'path': path}
+    ]);
+  });
+
+  test('a Storage outage does not hold back the product row or a sale', () async {
+    final connector = SupabaseConnector(backend.client, powerSyncUrl: 'http://powersync.test', images: store);
+    final db = await DatabaseHelper().database;
+    final path = await store.save(profile.id, product.id, bytes('jpeg'));
+    await ProductDao().saveWithVariants(product.copyWith(imagePath: path), isNew: true);
+    await sell(product);
+    backend.reply = (r) => r.isStorage ? 503 : null;
+
+    await connector.uploadData(db);
+
+    expect(backend.requests.where((r) => !r.isStorage).map((r) => r.path), containsAll(['/rest/v1/product', '/rest/v1/rpc/record_sale']));
+    expect(await db.getNextCrudTransaction(), isNull);
     expect(await queue(), [
       {'op': 'upload', 'path': path}
     ]);
