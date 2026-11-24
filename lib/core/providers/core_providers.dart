@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import '../auth/auth_repository.dart';
 import '../db/database_helper.dart';
 import '../dao/business_profile_dao.dart';
@@ -89,8 +90,8 @@ final activeProfileProvider =
     userId: ref.watch(authProvider),
   );
   ref.listen<AsyncValue<SyncState>>(syncStateProvider, (prev, next) {
-    final at = next.valueOrNull?.lastSyncedAt;
-    if (at != null && at != prev?.valueOrNull?.lastSyncedAt) notifier.reloadAfterSync();
+    final at = next.value?.lastSyncedAt;
+    if (at != null && at != prev?.value?.lastSyncedAt) notifier.reloadAfterSync();
   });
   return notifier;
 });
@@ -119,7 +120,7 @@ class ActiveProfileNotifier extends StateNotifier<AsyncValue<BusinessProfile?>> 
   /// to onboarding in between. A profile that did not change keeps its state,
   /// so nothing downstream reloads.
   Future<void> reloadAfterSync() async {
-    if (state.valueOrNull == null) state = const AsyncValue.loading();
+    if (state.value == null) state = const AsyncValue.loading();
     try {
       final profile = await _dao.getActiveProfile(userId: _userId);
       if (!mounted) return;
@@ -140,7 +141,7 @@ class ActiveProfileNotifier extends StateNotifier<AsyncValue<BusinessProfile?>> 
   /// the currency or its decimals change after products or sales exist,
   /// because stored minor-unit amounts would be rescaled.
   Future<void> updateProfile(BusinessProfile profile) async {
-    final current = state.valueOrNull;
+    final current = state.value;
     final currencyChanged = current != null &&
         (current.currency != profile.currency ||
             current.currencyDecimals != profile.currencyDecimals);
@@ -164,10 +165,10 @@ enum ShopRole { owner, staff }
 /// membership row was created on this device, by its owner. Without a backend
 /// the user owns the shop.
 final shopRoleProvider = FutureProvider<ShopRole>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   final userId = ref.watch(authProvider);
   // A sync can change memberships, e.g. a promotion.
-  ref.watch(syncStateProvider.select((s) => s.valueOrNull?.lastSyncedAt));
+  ref.watch(syncStateProvider.select((s) => s.value?.lastSyncedAt));
   if (profile == null || userId == null) return ShopRole.owner;
   final role = await ref.read(businessProfileDaoProvider).getMemberRole(profile.id, userId);
   return role == 'staff' ? ShopRole.staff : ShopRole.owner;
@@ -176,4 +177,4 @@ final shopRoleProvider = FutureProvider<ShopRole>((ref) async {
 /// True once the role is known to be owner. Staff-restricted UI (shop
 /// settings, cost prices) stays hidden until then.
 final isOwnerProvider =
-    Provider<bool>((ref) => ref.watch(shopRoleProvider).valueOrNull == ShopRole.owner);
+    Provider<bool>((ref) => ref.watch(shopRoleProvider).value == ShopRole.owner);

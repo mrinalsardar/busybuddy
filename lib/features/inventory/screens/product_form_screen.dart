@@ -37,15 +37,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   final List<_VariantEntry> _variants = [];
 
   bool get _showVariants =>
-      ref.read(activeProfileProvider).valueOrNull?.variantSupport ?? false;
+      ref.read(activeProfileProvider).value?.variantSupport ?? false;
 
   MoneyFormat get _money =>
-      ref.read(activeProfileProvider).valueOrNull?.money ?? MoneyFormat.fallback;
+      ref.read(activeProfileProvider).value?.money ?? MoneyFormat.fallback;
 
   bool get _hasVariants => _showVariants && _variants.isNotEmpty;
 
   bool get _showExpiry =>
-      ref.read(activeProfileProvider).valueOrNull?.expiryTracking ?? false;
+      ref.read(activeProfileProvider).value?.expiryTracking ?? false;
 
   @override
   void initState() {
@@ -107,7 +107,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
-    final profile = ref.read(activeProfileProvider).valueOrNull!;
+    final profile = ref.read(activeProfileProvider).value!;
     final dao = ref.read(productDaoProvider);
     final id = _existing?.id ?? const Uuid().v4();
     final now = DateTime.now();

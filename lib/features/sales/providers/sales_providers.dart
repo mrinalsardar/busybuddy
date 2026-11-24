@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
@@ -136,18 +137,18 @@ class CartNotifier extends ChangeNotifier {
 }
 
 final cartProvider = ChangeNotifierProvider((ref) => CartNotifier(
-    allowOversell: () => ref.read(activeProfileProvider).valueOrNull?.allowOversell ?? false));
+    allowOversell: () => ref.read(activeProfileProvider).value?.allowOversell ?? false));
 
 // ── Today's total (minor units) ────────────────────────
 final todayTotalProvider = FutureProvider<int>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return 0;
   return ref.read(saleDaoProvider).getTodayTotalMinor(profile.id);
 });
 
 // ── Recent sales ───────────────────────────────────────
 final recentSalesProvider = FutureProvider<List<Sale>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return [];
   return ref.read(saleDaoProvider).getByProfile(profile.id, limit: 50);
 });
@@ -161,7 +162,7 @@ final checkoutProvider =
 
 Future<void> _checkout(Ref ref) async {
   final cart = ref.read(cartProvider);
-  final profile = ref.read(activeProfileProvider).valueOrNull;
+  final profile = ref.read(activeProfileProvider).value;
   if (profile == null || cart.items.isEmpty || cart.isCheckingOut) return;
 
   cart._setCheckingOut(true);

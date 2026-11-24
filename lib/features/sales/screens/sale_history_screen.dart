@@ -12,7 +12,7 @@ class SaleHistoryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final salesAsync = ref.watch(recentSalesProvider);
-    final profile = ref.watch(activeProfileProvider).valueOrNull;
+    final profile = ref.watch(activeProfileProvider).value;
     final money = profile?.money ?? MoneyFormat.fallback;
     final dateFmt = DateFormat('dd MMM yyyy, hh:mm a');
 

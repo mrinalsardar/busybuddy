@@ -101,8 +101,8 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(activeProfileProvider).valueOrNull;
-    final canEditCurrency = ref.watch(canEditCurrencyProvider).valueOrNull ?? false;
+    final profile = ref.watch(activeProfileProvider).value;
+    final canEditCurrency = ref.watch(canEditCurrencyProvider).value ?? false;
     final isOwner = ref.watch(isOwnerProvider);
     final signedIn = ref.watch(authProvider) != null;
     if (profile == null) return const Scaffold();
