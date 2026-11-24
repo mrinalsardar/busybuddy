@@ -138,7 +138,7 @@ class CartNotifier extends ChangeNotifier {
 final cartProvider = ChangeNotifierProvider((ref) {
   final cart = CartNotifier(
       allowOversell: () => ref.read(activeProfileProvider).valueOrNull?.allowOversell ?? false);
-  ref.listen(authProvider, (_, __) => cart.clear());
+  ref.listen(authProvider, (_, _) => cart.clear());
   return cart;
 });
 
