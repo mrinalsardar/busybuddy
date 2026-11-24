@@ -12,7 +12,9 @@ staff can share one shop.
 ## Running locally
 
 You need the [Supabase CLI](https://supabase.com/docs/guides/local-development)
-and Docker.
+and Docker. The full steps (a minimal `supabase start -x ...`, the Windows/WSL
+note, PowerSync and running the app) are in "Run the backend locally" in the
+[top-level README](../README.md#run-the-backend-locally).
 
 ```
 supabase start        # local stack; applies migrations on first start
@@ -31,7 +33,7 @@ The app signs in with an emailed one-time code (`signInWithOtp` and
 `verifyOTP`), not a link. The `magic_link` and `confirmation` email templates
 must show `{{ .Token }}`: a new user gets `confirmation`, a known user
 `magic_link`. `templates/` and `config.toml` set this for the local stack (read
-the codes in Inbucket at http://127.0.0.1:54324). A hosted project needs the
+the codes in Mailpit at http://127.0.0.1:54324). A hosted project needs the
 same templates in the dashboard (Authentication, Email Templates).
 
 A new user has no shop. The app then calls `create_shop` (through the upload
@@ -40,13 +42,23 @@ connector) or `join_shop` with an invite code from `create_invite`.
 ## PowerSync
 
 1. Create a database role for PowerSync. The migration does not create it,
-   because the role needs a password:
+   because the role needs a password. Run the two statements separately: a
+   multi-statement `psql -c` is one transaction, and creating a database
+   (the next point) cannot run inside one.
    ```sql
    create role powersync_role with replication bypassrls login password '<secret>';
    grant select on all tables in schema public to powersync_role;
    ```
-2. Point the PowerSync instance at the database. Use Supabase Auth (JWT `sub`
-   is `request.user_id()`) and deploy `powersync/sync-rules.yaml`.
+2. If the service keeps its bucket storage in Postgres (no MongoDB), create a
+   database for it: `create database powersync_storage;`
+3. Point the PowerSync instance at the database. Use Supabase Auth (JWT `sub`
+   is `request.user_id()`; the JWKS endpoint is `<api-url>/auth/v1/.well-known/jwks.json`,
+   audience `authenticated`) and deploy `powersync/sync-rules.yaml`.
+
+For the local stack, `powersync/config.local.yaml` does all of this: the
+top-level README shows how to create the role and storage database and run the
+service with it. It holds the local default passwords, so use it for local
+development only.
 
 Sync rules: one bucket per shop. The bucket parameter is each `profile_id` the
 user has in `shop_member`. The bucket holds that shop's `business_profile`,

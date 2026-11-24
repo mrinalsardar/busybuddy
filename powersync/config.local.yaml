@@ -1,0 +1,26 @@
+# PowerSync service config for the LOCAL Supabase stack only (see README,
+# "Run the backend locally"). Not for a hosted setup: it holds the local
+# default passwords and uses Postgres, not MongoDB, for bucket storage.
+#
+# Hostnames are container names on the Docker network that `supabase start`
+# creates (supabase_network_busybuddy), so the PowerSync container must join
+# that network. Mount this folder at /config.
+replication:
+  connections:
+    - type: postgresql
+      uri: postgresql://powersync_role:psync@supabase_db_busybuddy:5432/postgres
+      sslmode: disable
+
+storage:
+  type: postgresql
+  uri: postgresql://postgres:postgres@supabase_db_busybuddy:5432/powersync_storage
+  sslmode: disable
+
+port: 8080
+
+sync_rules:
+  path: /config/sync-rules.yaml
+
+client_auth:
+  jwks_uri: http://supabase_kong_busybuddy:8000/auth/v1/.well-known/jwks.json
+  audience: ["authenticated"]
