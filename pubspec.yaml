@@ -11,6 +11,7 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^2.0.0
+  material_ui: ^1.11.1
 
   # Database (local SQLite synced to Supabase through PowerSync)
   powersync: ^2.6.2
