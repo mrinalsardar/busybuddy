@@ -32,6 +32,8 @@ dependencies:
   intl: ^0.20.2
   equatable: ^3.0.0
   json_annotation: ^4.9.0
+  image: ^4.13.1
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:

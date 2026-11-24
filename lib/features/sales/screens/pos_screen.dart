@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/images/product_image.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
 import '../../../core/theme/app_theme.dart';
@@ -84,13 +85,14 @@ class _ProductPicker extends ConsumerWidget {
             crossAxisCount: 3,
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: 0.82,
+            childAspectRatio: 0.78,
           ),
           itemCount: products.length,
           itemBuilder: (_, i) {
             final p = products[i];
             return _ProductTile(
               name: p.name,
+              imagePath: p.imagePath,
               priceMinor: p.priceMinor,
               canSell: allowOversell || p.stockQty > 0,
               money: money,
@@ -175,6 +177,7 @@ class _VariantPicker extends StatelessWidget {
 
 class _ProductTile extends StatelessWidget {
   final String name;
+  final String? imagePath;
   final int priceMinor;
   final bool canSell;
   final MoneyFormat money;
@@ -182,6 +185,7 @@ class _ProductTile extends StatelessWidget {
 
   const _ProductTile({
     required this.name,
+    required this.imagePath,
     required this.priceMinor,
     required this.canSell,
     required this.money,
@@ -203,15 +207,11 @@ class _ProductTile extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryPurple.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.shopping_bag_outlined,
-                      color: AppTheme.primaryPurple, size: 20),
+                ProductImage(
+                  imagePath: imagePath,
+                  size: 48,
+                  radius: 10,
+                  placeholder: Icons.shopping_bag_outlined,
                 ),
                 const SizedBox(height: 8),
                 Text(name,

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:powersync/powersync.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../images/product_image_store.dart';
 import 'db_time.dart';
 import 'local_owner.dart';
 
@@ -18,16 +19,22 @@ import 'local_owner.dart';
 /// - `stock_qty` is never uploaded: the server computes it from movements;
 /// - a new shop uploads through `create_shop`, a profile change through
 ///   `update_profile`;
-/// - other tables are upserted, updated and deleted directly.
+/// - other tables are upserted, updated and deleted directly;
+/// - product image files queued in `image_queue` go to Supabase Storage (see
+///   [ProductImageStore]): uploads before the product rows that name them,
+///   deletions after.
 ///
 /// Network and server errors are rethrown, so PowerSync retries the change
 /// later. A change the server rejects for good (a SQLSTATE the README names,
 /// see [isPermanentError]) would block every later change, sales included, so
 /// it is recorded in the local `upload_error` table and skipped.
 class SupabaseConnector extends PowerSyncBackendConnector {
-  SupabaseConnector(this.client, {required this.powerSyncUrl});
+  SupabaseConnector(this.client, {required this.powerSyncUrl, this.images});
 
   final SupabaseClient client;
+
+  /// Moves the product image files; null: image files are not synced.
+  final ProductImageStore? images;
 
   /// PowerSync service endpoint.
   final String powerSyncUrl;
@@ -70,12 +77,14 @@ class SupabaseConnector extends PowerSyncBackendConnector {
     if (owner != null && owner.userId != user.id) {
       throw StateError('Queued changes belong to another account; uploads wait for it to sign in');
     }
+    await images?.uploadPending(database);
     while (true) {
       final transaction = await database.getNextCrudTransaction();
-      if (transaction == null) return;
+      if (transaction == null) break;
       await _uploadTransaction(database, transaction.crud);
       await transaction.complete();
     }
+    await images?.deletePending(database);
   }
 
   Future<void> _uploadTransaction(PowerSyncDatabase database, List<CrudEntry> crud) async {
