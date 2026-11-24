@@ -6,6 +6,54 @@ import '../../../core/utils/money.dart';
 import '../../../core/providers/core_providers.dart';
 import '../providers/inventory_providers.dart';
 
+class _SearchField extends ConsumerStatefulWidget {
+  const _SearchField();
+
+  @override
+  ConsumerState<_SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends ConsumerState<_SearchField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: ref.read(inventorySearchProvider));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final search = ref.watch(inventorySearchProvider);
+    ref.listen<String>(inventorySearchProvider, (_, next) {
+      if (_controller.text != next) _controller.text = next;
+    });
+    return TextField(
+      controller: _controller,
+      onChanged: (v) => ref.read(inventorySearchProvider.notifier).state = v,
+      decoration: InputDecoration(
+        hintText: 'Search products…',
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        suffixIcon: search.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: () =>
+                    ref.read(inventorySearchProvider.notifier).state = '',
+              )
+            : null,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    );
+  }
+}
+
 class ProductListScreen extends ConsumerWidget {
   const ProductListScreen({super.key});
 
@@ -33,23 +81,7 @@ class ProductListScreen extends ConsumerWidget {
           // ── Search bar ─────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: TextField(
-              onChanged: (v) => ref.read(inventorySearchProvider.notifier).state = v,
-              decoration: InputDecoration(
-                hintText: 'Search products…',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: search.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: () =>
-                            ref.read(inventorySearchProvider.notifier).state = '',
-                      )
-                    : null,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-            ),
+            child: const _SearchField(),
           ),
 
           // ── Product grid ───────────────────────────

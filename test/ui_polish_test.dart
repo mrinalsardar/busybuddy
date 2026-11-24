@@ -63,6 +63,8 @@ void main() {
       await tester.tap(find.text('Clear search and filter'));
       await tester.pumpAndSettle();
       expect(find.text('No products yet'), findsOneWidget);
+      expect(find.widgetWithText(TextField, 'zzz'), findsNothing);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '');
     });
 
     testWidgets('no match for a category filter says nothing matched', (tester) async {
