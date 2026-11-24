@@ -56,7 +56,10 @@ Future<AuthRepository?> _initAuth() async {
   }
   final client = Supabase.instance.client;
   final sync = SyncSession(client, SupabaseConnector(client, powerSyncUrl: _powerSyncUrl));
-  return SupabaseAuthRepository(client, clearLocalData: sync.clearLocalData);
+  // Decide before the first frame whether the stored session may use the
+  // local data (see SyncSession).
+  await sync.init();
+  return SupabaseAuthRepository(client, sync: sync);
 }
 
 class BusyBuddyApp extends ConsumerWidget {

@@ -37,6 +37,20 @@ abstract class AuthRepository {
 
   Future<void> signOut();
 
+  /// Set while a different account signed in over unsynced changes of the
+  /// previous one. The app is unusable until the user resolves it.
+  OwnerConflict? get conflict;
+
+  /// [conflict] after every change.
+  Stream<OwnerConflict?> get conflictChanges;
+
+  /// Resolves [conflict] by deleting the previous account's unsynced changes.
+  Future<void> discardPendingChanges();
+
+  /// Resolves [conflict] by signing the new account out, keeping the changes
+  /// so the previous account can sign in and upload them.
+  Future<void> leaveForPreviousAccount();
+
   /// Owner only: a single-use invite code for the shop [profileId].
   Future<String> createInvite(String profileId);
 
@@ -55,6 +69,10 @@ class LocalAuthRepository implements AuthRepository {
   String? get email => null;
   @override
   Stream<String?> get userChanges => const Stream.empty();
+  @override
+  OwnerConflict? get conflict => null;
+  @override
+  Stream<OwnerConflict?> get conflictChanges => const Stream.empty();
 
   static Never _unsupported() => throw UnsupportedError('No backend is configured');
 
@@ -65,15 +83,21 @@ class LocalAuthRepository implements AuthRepository {
   @override
   Future<void> signOut() async => _unsupported();
   @override
+  Future<void> discardPendingChanges() async => _unsupported();
+  @override
+  Future<void> leaveForPreviousAccount() async => _unsupported();
+  @override
   Future<String> createInvite(String profileId) async => _unsupported();
   @override
   Future<String> joinShop(String code) async => _unsupported();
 }
 
 class SupabaseAuthRepository implements AuthRepository {
-  SupabaseAuthRepository(this.client, {required this.clearLocalData});
+  SupabaseAuthRepository(this.client, {required this.sync, Future<void> Function()? clearLocalData})
+      : clearLocalData = clearLocalData ?? sync.clearLocalData;
 
   final SupabaseClient client;
+  final SyncSession sync;
 
   /// Deletes the local copy of the shop's data; see [SyncSession.clearLocalData].
   final Future<void> Function() clearLocalData;
@@ -82,14 +106,31 @@ class SupabaseAuthRepository implements AuthRepository {
   bool get enabled => true;
 
   @override
-  String? get userId => client.auth.currentUser?.id;
+  String? get userId => sync.conflict != null ? null : client.auth.currentUser?.id;
 
   @override
   String? get email => client.auth.currentUser?.email;
 
   @override
-  Stream<String?> get userChanges =>
-      client.auth.onAuthStateChange.map((state) => state.session?.user.id);
+  Stream<String?> get userChanges => sync.userChanges;
+
+  @override
+  OwnerConflict? get conflict => sync.conflict;
+
+  @override
+  Stream<OwnerConflict?> get conflictChanges => sync.conflictChanges;
+
+  @override
+  Future<void> discardPendingChanges() async {
+    try {
+      await sync.discardPendingChanges();
+    } catch (_) {
+      throw const AuthFailure('Could not remove the unsynced changes from this device.');
+    }
+  }
+
+  @override
+  Future<void> leaveForPreviousAccount() => _run(sync.leaveForPreviousAccount);
 
   @override
   Future<void> sendOtp(String email) =>
