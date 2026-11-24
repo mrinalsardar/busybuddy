@@ -11,10 +11,14 @@ staff can share one shop.
 
 ## Running locally
 
-You need the [Supabase CLI](https://supabase.com/docs/guides/local-development)
-and Docker. The full steps (a minimal `supabase start -x ...`, the Windows/WSL
-note, PowerSync and running the app) are in "Run the backend locally" in the
+The quickest way is the container environment in `../dev/`, which needs only
+Docker: `dev/up.sh` starts Postgres with these migrations, Auth, the REST API,
+the mail inbox and PowerSync. See "Run the backend locally" in the
 [top-level README](../README.md#run-the-backend-locally).
+
+To use the [Supabase CLI](https://supabase.com/docs/guides/local-development)
+instead (it is also what runs the pgTAP tests), see
+[Alternative: the Supabase CLI](../README.md#alternative-the-supabase-cli).
 
 ```
 supabase start        # local stack; applies migrations on first start
@@ -55,9 +59,9 @@ connector) or `join_shop` with an invite code from `create_invite`.
    is `request.user_id()`; the JWKS endpoint is `<api-url>/auth/v1/.well-known/jwks.json`,
    audience `authenticated`) and deploy `powersync/sync-rules.yaml`.
 
-For the local stack, `powersync/config.local.yaml` does all of this: the
-top-level README shows how to create the role and storage database and run the
-service with it. It holds the local default passwords, so use it for local
+For the local stack, `powersync/config.local.yaml` does all of this: `dev/up.sh`
+creates the role and storage database and runs the service with it (the
+top-level README also shows the manual steps for the Supabase CLI). It holds the local default passwords, so use it for local
 development only.
 
 Sync rules: one bucket per shop. The bucket parameter is each `profile_id` the

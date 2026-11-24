@@ -27,7 +27,7 @@ Money is stored as integer minor units, so amounts never use floating point.
 - **Flutter** with Dart `^3.11.5` (the `environment.sdk` constraint in `pubspec.yaml`). The tests were run with Flutter 3.50.1 (Dart 3.14.0) on the stable channel. Flutter must be on your `PATH`.
 - **JDK 17.** The Android build targets Java 17 (`android/app/build.gradle.kts`).
 - **Android SDK** with an emulator image and `adb`. The Android build uses Gradle 9.6.0 (downloaded by the Gradle wrapper), Android Gradle Plugin 9.5.2 and Kotlin 2.4.21. Run `flutter doctor` to check your toolchain.
-- **For the local backend only:** the [Supabase CLI](https://supabase.com/docs/guides/local-development) and Docker.
+- **For the local backend and the containerised tests:** Docker with Compose v2 (`docker compose`). No other install is needed for those; see [Run the backend locally](#run-the-backend-locally). The [Supabase CLI](https://supabase.com/docs/guides/local-development) is only needed for `supabase test db` and the [CLI alternative](#alternative-the-supabase-cli).
 
 You do not need a Supabase or PowerSync account to run the app. The maintainer has no hosted accounts yet.
 
@@ -93,7 +93,68 @@ The server side lives in `supabase/` and `powersync/`. [`supabase/README.md`](su
 
 ### Run the backend locally
 
-This starts Supabase and PowerSync on your computer, so sign-in and sync work without any hosted account. You need the Supabase CLI and Docker. Run every command from the repository root, except where a step says otherwise.
+`dev/` defines a local test environment as Docker Compose services. It runs the services sign-in and sync need and nothing else: Postgres with the repository's migrations applied, Supabase Auth, the REST API, an API gateway, the Mailpit mail inbox and PowerSync. Only Docker is needed. Run the commands from the repository root.
+
+| Command | What it does |
+|---|---|
+| `dev/up.sh` | Starts the stack, waits until it is healthy and creates the seed accounts. Safe to run again. |
+| `dev/defines.sh emulator` | Prints the `--dart-define` flags for an Android emulator (`desktop` for an app that runs on your computer). |
+| `dev/code.sh <email>` | Prints the newest sign-in code mailed to that address. |
+| `dev/test.sh` | Runs `flutter pub get`, `flutter analyze` and `flutter test` in the pinned toolchain image. |
+| `dev/down.sh` | Stops the stack and keeps its data. `dev/down.sh --reset` also deletes the data. |
+
+**Start the backend and run the app.**
+
+```
+dev/up.sh
+flutter emulators --launch <emulator-id>
+flutter run -d <device-id> $(dev/defines.sh emulator)
+```
+
+The first `dev/up.sh` pulls the images, which takes a few minutes. It starts the services in this order: Postgres, Auth, a one-shot `setup` job, then PowerSync. `setup` applies `supabase/migrations/` once Auth has created its schema, creates the `powersync_role` database role and the `powersync_storage` database, and exits. PowerSync reads the committed [`powersync/config.local.yaml`](powersync/config.local.yaml) and [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml) unchanged: the Compose services use the container names that config expects. All ports are published on `127.0.0.1` only:
+
+| Service | Address |
+|---|---|
+| API gateway (`/auth/v1`, `/rest/v1`) | http://127.0.0.1:54321 |
+| Postgres | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
+| Mailpit inbox | http://127.0.0.1:54324 |
+| PowerSync | http://127.0.0.1:8080 |
+
+These are the ports of `supabase start`, so run only one of the two stacks at a time. An Android emulator reaches your computer at `10.0.2.2`, which `dev/defines.sh emulator` uses. A physical device cannot reach `127.0.0.1` on your computer: publish the ports on your LAN address in `dev/compose.yaml` and replace the host in the `dev/defines.sh` output.
+
+**Accounts and sign-in codes.** `dev/up.sh` creates three confirmed accounts: `owner@busybuddy.test`, `staff@busybuddy.test` and `other@busybuddy.test`. They have no password and no shop. Sign in with an emailed code: enter the address in the app, then run `dev/code.sh owner@busybuddy.test` and type the 6-digit code it prints. Any other address also works, because sign-up is on. The Mailpit inbox at http://127.0.0.1:54324 shows every mail.
+
+**Run the tests.**
+
+```
+dev/test.sh
+dev/test.sh flutter test test/data_integrity_test.dart --plain-name "<test name>"
+```
+
+The first run builds the `busybuddy-dev-test` image (JDK 17, Flutter 3.47.9, Android SDK platform 36 and build-tools 36.0.0). It is several GB and takes a few minutes. The repository is mounted into the container, so results match your working tree, and the container runs as your user id. The Flutter version is the one `.github/workflows/ci.yml` uses: change both together. The tests need no backend.
+
+**Stop and reset.**
+
+```
+dev/down.sh            # stop; the database, PowerSync storage and mail are kept
+dev/down.sh --reset    # stop and delete them; the next dev/up.sh starts from scratch
+```
+
+Both commands act only on the Compose project `busybuddy-dev`. To rebuild the test image after you change `dev/test-runner/Dockerfile`, run `docker compose -f dev/compose.yaml build test`. The test container's pub cache is the separate volume `busybuddy-dev_pub-cache`, which a reset keeps. After you change a migration, run `dev/down.sh --reset` and `dev/up.sh`: `setup` applies a migration file once and does not re-apply an edited one.
+
+**Platform notes.**
+
+- *Linux:* Docker Engine with the Compose plugin.
+- *macOS:* Docker Desktop.
+- *Windows:* use WSL 2 for everything. Clone the repository inside the WSL distro (not under `/mnt/c`) and run the scripts from a WSL shell. Docker must be reachable from WSL: enable Docker Desktop's WSL integration (Settings, Resources, WSL integration, your distro), or install Docker Engine inside the distro. No Windows-side CLI or copied project folder is needed. An Android emulator on the Windows side reaches the stack at `10.0.2.2`, because WSL 2 forwards the ports published on `127.0.0.1`.
+
+**Testing a forced sign-out.** The access token lives `GOTRUE_JWT_EXP` seconds (3600), so a revoked session shows up in the app only after up to an hour. For a test, set `GOTRUE_JWT_EXP: "60"` in `dev/compose.yaml` (do not commit it) and run `dev/up.sh`. Then `docker compose -f dev/compose.yaml exec db psql -U postgres -c "delete from auth.sessions"` signs the app out within about a minute.
+
+**What is where.** `dev/compose.yaml` pins every image version. The Auth signing key, JWT secret, anon key and service key in `dev/compose.yaml` and `dev/lib.sh` are throwaway local values: never use them for a hosted project. The sign-in email templates are `supabase/templates/`, served to Auth by the gateway (`dev/gateway.conf`). The server side is described in [`supabase/README.md`](supabase/README.md).
+
+### Alternative: the Supabase CLI
+
+`supabase start` runs the same services and also gives you `supabase test db` (the pgTAP tests). It needs the Supabase CLI and a Docker socket. The steps below start Supabase, create the PowerSync role and storage database by hand and run PowerSync with `docker run`. Run every command from the repository root, except where a step says otherwise.
 
 **1. Start Supabase.** Sign-in and sync need only the database, Auth, the API gateway (`kong`), `rest` and the mail container. Exclude the rest, so the stack needs less RAM and starts faster:
 

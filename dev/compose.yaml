@@ -1,0 +1,174 @@
+# Local test environment for BusyBuddy: backend (Postgres, Auth, REST, mail
+# inbox, gateway), PowerSync, and a Flutter test runner. Local use only: it holds
+# throwaway passwords and keys. See "Local test environment" in the top-level
+# README. Run it through the scripts in this folder, or directly:
+#   docker compose -f dev/compose.yaml up -d --wait
+#
+# The stack publishes the same ports as `supabase start`, so the same
+# --dart-define values work. Do not run both at once.
+name: busybuddy-dev
+
+x-jwt-secret: &jwt-secret super-secret-jwt-token-with-at-least-32-characters-long
+# Public half of the Auth signing key, plus the HS256 secret that signed the
+# anon and service keys in dev/lib.sh. PostgREST checks tokens against it.
+x-jwks: &jwks '{"keys":[{"kty":"EC","kid":"busybuddy-local-es256","use":"sig","key_ops":["verify"],"alg":"ES256","ext":true,"crv":"P-256","x":"OWDZWgoE1eGBsZVKenYrdU10-tW2d1lTmVIGR9NbuLI","y":"ZRjeCaiOmtlDKr2iNCwkHmiTBX9ds9N1ssGVQTN5Nfw"},{"kty":"oct","k":"c3VwZXItc2VjcmV0LWp3dC10b2tlbi13aXRoLWF0LWxlYXN0LTMyLWNoYXJhY3RlcnMtbG9uZw","alg":"HS256","key_ops":["verify"]}]}'
+# Auth signs tokens with the EC private key (ES256), so the JWKS endpoint that
+# PowerSync reads has a public key. The oct key only verifies the anon/service keys.
+x-jwt-keys: &jwt-keys '[{"kty":"EC","kid":"busybuddy-local-es256","use":"sig","key_ops":["sign","verify"],"alg":"ES256","ext":true,"d":"sT3jkeFPPTtix9aHurepgU_SKPYVqBEAfU8acinhK_g","crv":"P-256","x":"OWDZWgoE1eGBsZVKenYrdU10-tW2d1lTmVIGR9NbuLI","y":"ZRjeCaiOmtlDKr2iNCwkHmiTBX9ds9N1ssGVQTN5Nfw"},{"kty":"oct","k":"c3VwZXItc2VjcmV0LWp3dC10b2tlbi13aXRoLWF0LWxlYXN0LTMyLWNoYXJhY3RlcnMtbG9uZw","alg":"HS256","key_ops":["verify"]}]'
+
+services:
+  db:
+    image: public.ecr.aws/supabase/postgres:17.12.0.002
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:54322:5432"
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: postgres
+      JWT_SECRET: *jwt-secret
+      JWT_EXP: "3600"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks:
+      default:
+        # The names `supabase start` gives its containers, so the committed
+        # powersync/config.local.yaml works unchanged.
+        aliases: [supabase_db_busybuddy]
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.198.0
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+      gateway: {condition: service_started}
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://127.0.0.1:54321
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:postgres@db:5432/postgres
+      GOTRUE_SITE_URL: http://127.0.0.1:3000
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      # Same as supabase/config.toml (jwt_expiry). Lower it to test a forced sign-out.
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_SECRET: *jwt-secret
+      GOTRUE_JWT_KEYS: *jwt-keys
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      GOTRUE_SMTP_ADMIN_EMAIL: admin@busybuddy.test
+      GOTRUE_SMTP_HOST: mail
+      GOTRUE_SMTP_PORT: "1025"
+      GOTRUE_SMTP_SENDER_NAME: BusyBuddy
+      GOTRUE_MAILER_OTP_LENGTH: "6"
+      # The sign-in code emails: same templates as supabase/config.toml, served by the gateway.
+      GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: Your BusyBuddy sign-in code
+      GOTRUE_MAILER_SUBJECTS_CONFIRMATION: Your BusyBuddy sign-in code
+      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: http://gateway:8000/templates/magic_link.html
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://gateway:8000/templates/confirmation.html
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v16.6
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      PGRST_DB_URI: postgres://authenticator:postgres@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,graphql_public
+      PGRST_DB_EXTRA_SEARCH_PATH: public,extensions
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_MAX_ROWS: "1000"
+      PGRST_JWT_SECRET: *jwks
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+
+  mail:
+    image: public.ecr.aws/supabase/mailpit:v1.31.3
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:54324:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8025/livez"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  gateway:
+    image: nginx:1.27.5-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:54321:8000"
+    volumes:
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../supabase/templates:/usr/share/nginx/templates:ro
+    networks:
+      default:
+        aliases: [supabase_kong_busybuddy]
+
+  # One-shot: applies supabase/migrations once Auth has created its schema, then
+  # creates the PowerSync role and storage database. Safe to run again.
+  setup:
+    image: public.ecr.aws/supabase/postgres:17.12.0.002
+    depends_on:
+      db: {condition: service_healthy}
+      auth: {condition: service_started}
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      PGOPTIONS: -c client_min_messages=warning
+    volumes:
+      - ./setup.sh:/setup.sh:ro
+      - ../supabase/migrations:/migrations:ro
+    entrypoint: ["bash", "/setup.sh"]
+
+  powersync:
+    image: journeyapps/powersync-service:1.29.1
+    restart: unless-stopped
+    depends_on:
+      setup: {condition: service_completed_successfully}
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/config.local.yaml
+    volumes:
+      - ../powersync:/config:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/probes/liveness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  # `docker compose -f dev/compose.yaml run --rm test` (or dev/test.sh): pub get,
+  # analyze and test inside the pinned toolchain image. Not part of `up`.
+  test:
+    profiles: [test]
+    build:
+      context: ./test-runner
+    image: busybuddy-dev-test:flutter-3.47.9
+    working_dir: /workspace
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      HOME: /home/dev
+    volumes:
+      - ..:/workspace
+      - pub-cache:/home/dev/.pub-cache
+    command: ["sh", "-c", "flutter pub get && flutter analyze && flutter test"]
+
+volumes:
+  db-data:
+  pub-cache:
