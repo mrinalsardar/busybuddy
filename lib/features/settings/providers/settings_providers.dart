@@ -5,7 +5,7 @@ import '../../../core/providers/core_providers.dart';
 /// and decimals can still change. Auto-disposed so it is re-checked each time
 /// Settings opens.
 final canEditCurrencyProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final profile = ref.watch(activeProfileProvider).valueOrNull;
+  final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return false;
   return !await ref.read(businessProfileDaoProvider).hasProductsOrSales(profile.id);
 });

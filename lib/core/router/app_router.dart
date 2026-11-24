@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/core_providers.dart';
@@ -36,7 +36,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final authEnabled = ref.read(authRepositoryProvider).enabled;
       final signedIn = ref.read(authProvider) != null;
       final profileAsync = ref.read(activeProfileProvider);
-      final profile = profileAsync.valueOrNull;
+      final profile = profileAsync.value;
       final currentPath = state.uri.path;
       bool on(String path) => currentPath == path || currentPath.startsWith('$path/');
 
@@ -57,7 +57,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (profile == null) {
         // A new device has no shop until its first sync: don't offer to create
         // a second shop before the existing one had a chance to arrive.
-        if (authEnabled && ref.read(syncStateProvider).valueOrNull?.hasSynced != true) {
+        if (authEnabled && ref.read(syncStateProvider).value?.hasSynced != true) {
           return on('/syncing') ? null : '/syncing';
         }
         return on('/onboarding') ? null : '/onboarding';

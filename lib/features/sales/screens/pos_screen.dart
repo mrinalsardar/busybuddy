@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
@@ -14,7 +14,7 @@ class PosScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cart = ref.watch(cartProvider);
-    final profile = ref.watch(activeProfileProvider).valueOrNull;
+    final profile = ref.watch(activeProfileProvider).value;
     final todayAsync = ref.watch(todayTotalProvider);
     final money = profile?.money ?? MoneyFormat.fallback;
 
@@ -57,7 +57,7 @@ class _ProductPicker extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(posProductListProvider);
     final allowOversell =
-        ref.watch(activeProfileProvider).valueOrNull?.allowOversell ?? false;
+        ref.watch(activeProfileProvider).value?.allowOversell ?? false;
 
     return productsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -121,7 +121,7 @@ Future<void> _addToCart(BuildContext context, WidgetRef ref, Product product) as
       builder: (_) => _VariantPicker(
         product: product,
         variants: variants,
-        allowOversell: ref.read(activeProfileProvider).valueOrNull?.allowOversell ?? false,
+        allowOversell: ref.read(activeProfileProvider).value?.allowOversell ?? false,
       ),
     );
     if (variant == null) return;
