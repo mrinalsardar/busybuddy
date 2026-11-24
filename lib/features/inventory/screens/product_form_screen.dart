@@ -1,8 +1,14 @@
+import 'dart:typed_data';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/db/data_exceptions.dart';
+import '../../../core/images/image_processor.dart';
+import '../../../core/images/image_providers.dart';
+import '../../../core/images/product_image.dart';
+import '../../../core/images/product_image_store.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
 import '../../../core/providers/core_providers.dart';
@@ -32,6 +38,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   bool _saving = false;
   bool _isEdit = false;
   Product? _existing;
+
+  // Picture: the saved one stays unless the user picks another (_newImage,
+  // already resized) or removes it (_removeImage).
+  Uint8List? _newImage;
+  bool _removeImage = false;
+  bool _pickingImage = false;
 
   // Variant management
   final List<_VariantEntry> _variants = [];
@@ -112,6 +124,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final id = _existing?.id ?? const Uuid().v4();
     final now = DateTime.now();
 
+    final oldImagePath = _existing?.imagePath;
+    var imagePath = _removeImage ? null : oldImagePath;
+    if (_newImage != null) {
+      try {
+        imagePath = await ref.read(productImageStoreProvider).save(profile.id, id, _newImage!);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _saving = false);
+        _showError('Could not save the picture: $e');
+        return;
+      }
+    }
+
     final product = Product(
       id: id,
       profileId: profile.id,
@@ -126,6 +151,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       stockQty: _hasVariants ? 0 : int.parse(_stockCtrl.text.trim()),
       lowStockThreshold: int.parse(_lowStockCtrl.text.trim()),
       expiryDate: _expiryDate,
+      imagePath: imagePath,
       archived: _existing?.archived ?? false,
       createdAt: _existing?.createdAt ?? now,
       updatedAt: now,
@@ -146,17 +172,17 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
     try {
       await dao.saveWithVariants(product, isNew: !_isEdit, variants: variants);
-    } on DuplicateCodeException catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      _showError(e.message);
-      return;
     } catch (e) {
+      // Not saved: the new picture file is not wanted.
+      if (_newImage != null) await _store.deleteLocal(imagePath!);
       if (!mounted) return;
       setState(() => _saving = false);
-      _showError('Could not save product: $e');
+      _showError(e is DuplicateCodeException ? e.message : 'Could not save product: $e');
       return;
     }
+    // Saved: the replaced or removed picture's file is not wanted on this
+    // device any more (the server's copy is deleted from the queue).
+    if (oldImagePath != null && oldImagePath != imagePath) await _store.deleteLocal(oldImagePath);
 
     invalidateProductViews(ref.invalidate);
     if (mounted) context.go('/inventory');
@@ -186,9 +212,92 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         if (mounted) _showError('Could not delete product: $e');
         return;
       }
+      final imagePath = _existing?.imagePath;
+      if (imagePath != null) await _store.deleteLocal(imagePath);
       invalidateProductViews(ref.invalidate);
       if (mounted) context.go('/inventory');
     }
+  }
+
+  ProductImageStore get _store => ref.read(productImageStoreProvider);
+
+  Future<void> _pickImage(ImagePickSource source) async {
+    setState(() => _pickingImage = true);
+    try {
+      final picked = await ref.read(productImagePickerProvider).pick(source);
+      if (picked == null) return;
+      final jpeg = await processProductImageInBackground(picked);
+      if (mounted) {
+        setState(() {
+          _newImage = jpeg;
+          _removeImage = false;
+        });
+      }
+    } on UnsupportedImageException {
+      if (mounted) _showError('That file is not a picture the app can use');
+    } catch (e) {
+      if (mounted) _showError('Could not get the picture: $e');
+    } finally {
+      if (mounted) setState(() => _pickingImage = false);
+    }
+  }
+
+  bool get _hasImage => _newImage != null || (!_removeImage && _existing?.imagePath != null);
+
+  Widget _imageSection() {
+    const size = 96.0;
+    final Widget preview = _newImage != null
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            child: Image.memory(_newImage!, width: size, height: size, fit: BoxFit.cover),
+          )
+        : ProductImage(
+            imagePath: _removeImage ? null : _existing?.imagePath,
+            size: size,
+            radius: AppTheme.radiusMd,
+            placeholder: Icons.add_a_photo_outlined,
+          );
+    return Row(
+      children: [
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            preview,
+            if (_pickingImage) const CircularProgressIndicator(strokeWidth: 2.5),
+          ],
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _pickingImage ? null : () => _pickImage(ImagePickSource.camera),
+                icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                label: const Text('Camera'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _pickingImage ? null : () => _pickImage(ImagePickSource.gallery),
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                label: const Text('Gallery'),
+              ),
+              if (_hasImage)
+                TextButton.icon(
+                  onPressed: _pickingImage
+                      ? null
+                      : () => setState(() {
+                            _newImage = null;
+                            _removeImage = true;
+                          }),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.error),
+                  label: const Text('Remove', style: TextStyle(color: AppTheme.error)),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   void _showError(String message) {
@@ -221,6 +330,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _section('Photo (optional)'),
+              const SizedBox(height: 12),
+              _imageSection(),
+              const SizedBox(height: 24),
               _section('Basic Info'),
               const SizedBox(height: 12),
               _field('Product Name', _nameCtrl, Icons.label_outline_rounded,

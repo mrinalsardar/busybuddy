@@ -223,6 +223,15 @@ const schema = Schema([
     Column.text('user_id'),
     Column.text('email'),
   ]),
+  // Local only: product image files still to upload to, or delete from,
+  // Supabase Storage (see ProductImageStore). PowerSync syncs rows, not files.
+  Table.localOnly('image_queue', [
+    // upload | delete
+    Column.text('op'),
+    // Storage object path, equal to product.image_path.
+    Column.text('path'),
+    Column.text('created_at'),
+  ]),
   // Local only: uploads the server rejected permanently (see
   // SupabaseConnector). They are skipped so later changes still upload.
   Table.localOnly('upload_error', [

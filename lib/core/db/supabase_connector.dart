@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:powersync/powersync.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../images/product_image_store.dart';
 import 'db_time.dart';
 import 'local_owner.dart';
 
@@ -18,16 +20,34 @@ import 'local_owner.dart';
 /// - `stock_qty` is never uploaded: the server computes it from movements;
 /// - a new shop uploads through `create_shop`, a profile change through
 ///   `update_profile`;
-/// - other tables are upserted, updated and deleted directly.
+/// - other tables are upserted, updated and deleted directly;
+/// - product image files queued in `image_queue` go to Supabase Storage (see
+///   [ProductImageStore]): they upload after all rows (a new shop exists
+///   before its files, and a slow Storage never delays a sale); a Storage
+///   failure leaves the file queued, and a timer retries it while one is left.
 ///
 /// Network and server errors are rethrown, so PowerSync retries the change
 /// later. A change the server rejects for good (a SQLSTATE the README names,
 /// see [isPermanentError]) would block every later change, sales included, so
 /// it is recorded in the local `upload_error` table and skipped.
 class SupabaseConnector extends PowerSyncBackendConnector {
-  SupabaseConnector(this.client, {required this.powerSyncUrl});
+  SupabaseConnector(
+    this.client, {
+    required this.powerSyncUrl,
+    this.images,
+    this.imageRetryDelay = const Duration(seconds: 30),
+  });
 
   final SupabaseClient client;
+
+  /// Moves the product image files; null: image files are not synced.
+  final ProductImageStore? images;
+
+  /// Wait before the image files left in the queue are tried again.
+  final Duration imageRetryDelay;
+
+  Timer? _imageRetry;
+  Future<void> _imageDrain = Future.value();
 
   /// PowerSync service endpoint.
   final String powerSyncUrl;
@@ -72,9 +92,39 @@ class SupabaseConnector extends PowerSyncBackendConnector {
     }
     while (true) {
       final transaction = await database.getNextCrudTransaction();
-      if (transaction == null) return;
+      if (transaction == null) break;
       await _uploadTransaction(database, transaction.crud);
       await transaction.complete();
+    }
+    await _drainImages(database);
+  }
+
+  /// Moves the queued image files, one drain at a time, and keeps one timer
+  /// armed while a file is left to retry.
+  Future<void> _drainImages(PowerSyncDatabase database) async {
+    final images = this.images;
+    if (images == null) return;
+    final run = _imageDrain.then((_) async {
+      final uploads = await images.uploadPending(database);
+      final deletions = await images.deletePending(database);
+      return uploads || deletions;
+    });
+    _imageDrain = run.then((_) {}, onError: (_) {});
+    final left = await run;
+    _imageRetry?.cancel();
+    _imageRetry = left ? Timer(imageRetryDelay, () => _retryImages(database)) : null;
+  }
+
+  Future<void> _retryImages(PowerSyncDatabase database) async {
+    _imageRetry = null;
+    try {
+      final user = client.auth.currentUser;
+      if (client.auth.currentSession == null || user == null) return;
+      final owner = await LocalOwner.read(database);
+      if (owner != null && owner.userId != user.id) return;
+      await _drainImages(database);
+    } catch (e) {
+      debugPrint('Product image retry stopped: $e');
     }
   }
 

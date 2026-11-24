@@ -10,6 +10,14 @@ done
 [ "$(psql -tAc "select to_regclass('auth.users') is not null")" = t ] \
   || { echo "auth.users never appeared; check 'docker compose logs auth'" >&2; exit 1; }
 
+echo "waiting for Storage to create its schema"
+for _ in $(seq 1 120); do
+  [ "$(psql -tAc "select to_regclass('storage.objects') is not null")" = t ] && break
+  sleep 1
+done
+[ "$(psql -tAc "select to_regclass('storage.objects') is not null")" = t ] \
+  || { echo "storage.objects never appeared; check 'docker compose logs storage'" >&2; exit 1; }
+
 psql -v ON_ERROR_STOP=1 -q -c "create schema if not exists dev; create table if not exists dev.applied_migration (name text primary key, applied_at timestamptz not null default now())"
 for f in /migrations/*.sql; do
   name=$(basename "$f")

@@ -2,6 +2,7 @@ import 'package:sqlite_async/sqlite_async.dart' show SqliteWriteContext;
 import '../db/base_dao.dart';
 import '../db/data_exceptions.dart';
 import '../db/db_time.dart';
+import '../db/image_queue.dart';
 import '../models/product.dart';
 import '../models/product_variant.dart';
 import '../models/stock_movement.dart';
@@ -50,8 +51,11 @@ class ProductDao extends BaseDao<Product> {
       if (await tx.getOptional('SELECT 1 FROM sale_item WHERE product_id = ?', [id]) != null) {
         throw const RecordInUseException('A product used in a sale cannot be deleted; archive it');
       }
+      final imagePath = (await tx.getOptional('SELECT image_path FROM product WHERE id = ?', [id]))?['image_path'];
       await tx.execute('DELETE FROM product_variant WHERE product_id = ?', [id]);
-      return deleteRow(tx, tableName, id);
+      final deleted = await deleteRow(tx, tableName, id);
+      if (imagePath is String) await queueImageDelete(tx, imagePath);
+      return deleted;
     });
   }
 
@@ -104,13 +108,18 @@ class ProductDao extends BaseDao<Product> {
   }
 
   /// Hides a product from inventory and POS. Products are never hard-deleted
-  /// from the UI because sale_item rows reference them.
+  /// from the UI because sale_item rows reference them. Its image is removed:
+  /// an archived product is not shown anywhere.
   Future<void> archive(String productId) async {
     final db = await this.db;
-    await db.execute(
-      'UPDATE product SET archived = 1, updated_at = ? WHERE id = ?',
-      [toDbTime(DateTime.now()), productId],
-    );
+    await db.writeTransaction((tx) async {
+      final imagePath = (await tx.getOptional('SELECT image_path FROM product WHERE id = ?', [productId]))?['image_path'];
+      await tx.execute(
+        'UPDATE product SET archived = 1, image_path = NULL, updated_at = ? WHERE id = ?',
+        [toDbTime(DateTime.now()), productId],
+      );
+      if (imagePath is String) await queueImageDelete(tx, imagePath);
+    });
   }
 
   /// Saves a product and (when [variants] is non-null) replaces its variant
@@ -124,6 +133,10 @@ class ProductDao extends BaseDao<Product> {
   /// sum of its variants' stock. When a product's last variants are removed,
   /// its stock restarts at 0 and the product's stockQty is a `conversion`
   /// movement.
+  ///
+  /// A changed [Product.imagePath] queues the file work for
+  /// ProductImageStore: an upload of the new file and removal of the old one.
+  /// The file itself must already be saved on the device.
   ///
   /// Throws [DataValidationException], [DuplicateCodeException] (another
   /// active product of the shop has the SKU or barcode), or, if [isNew] and
@@ -145,6 +158,11 @@ class ProductDao extends BaseDao<Product> {
         await insertRow(tx, tableName, {...product.toMap(), 'stock_qty': 0});
       } else {
         await updateRow(tx, tableName, product.id, product.toMap()..remove('stock_qty'));
+      }
+      final oldImage = before?.imagePath;
+      if (product.imagePath != oldImage) {
+        if (product.imagePath != null) await queueImageUpload(tx, product.imagePath!);
+        if (oldImage != null) await queueImageDelete(tx, oldImage);
       }
 
       final hadVariants = await hasVariants(tx, product.id);

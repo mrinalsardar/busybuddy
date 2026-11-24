@@ -4,8 +4,8 @@ Server side of the offline-first backend. Each device keeps a local SQLite copy
 and syncs it with this Postgres database through PowerSync. Several devices or
 staff can share one shop.
 
-- `migrations/`: schema, row-level security, server functions, and the
-  `powersync` publication.
+- `migrations/`: schema, row-level security, server functions, the
+  `powersync` publication, and the product image bucket.
 - `tests/`: pgTAP tests.
 - `../powersync/sync-rules.yaml`: PowerSync sync rules, with one bucket per shop.
 
@@ -26,6 +26,13 @@ supabase db reset     # re-create the database from migrations/
 supabase test db      # run tests/*.sql with pg_prove
 supabase stop
 ```
+
+Product images need the Storage service. `supabase start` runs it, and so does
+the container environment in `../dev/` (`dev/up.sh` starts Storage at
+http://127.0.0.1:54321/storage/v1, and applies the migrations only once Storage
+has created its schema). The bucket and its policies are created only where the
+`storage` schema exists, so `supabase db start` (Postgres only) skips them, and
+`tests/product_images_test.sql` skips its checks there.
 
 Each test file runs in a transaction that it rolls back. The tests insert their
 own `auth.users` rows. They act as a user with
@@ -198,6 +205,34 @@ device, sales included. Instead, the server flags the duplicate in
 
 The client keeps its own local duplicate check for instant feedback. It
 shows open `code_conflict` rows to the owner.
+
+## Product images
+
+PowerSync syncs rows, not files, so a product's picture travels through
+Supabase Storage. `product.image_path` holds the object path
+`<profile_id>/<product_id>/<uuid>.jpg` in the private `product-images`
+bucket. Each picture gets a new path, so a replaced picture is never served
+from a cache.
+
+- **Limits.** The bucket accepts only `image/jpeg`, 1 MiB at most. The app
+  resizes to 1024 px on the longest side and encodes JPEG quality 80
+  (`lib/core/images/image_processor.dart`), about 100-200 KB.
+- **Access.** Members of a shop read, add and delete the objects whose first
+  path segment is that shop's `profile_id` (policies on `storage.objects`,
+  using `private.my_shop_ids()`). There is no update policy and no `anon`
+  access.
+- **Upload and cleanup are the device's job.** Storage does not allow deleting
+  objects with SQL. A device uploads the file after its rows (a new shop
+  must exist before its files pass the access policy), with a 15 s limit per
+  request. A Storage failure leaves the file queued, never holds back the
+  rows, and is retried on a timer; until then another device may find no file
+  for a path and shows a placeholder. It deletes the old
+  file after a picture is replaced or removed or the product is archived or
+  deleted. A device keeps these jobs in the local `image_queue` table, so a
+  picture added offline uploads later. A device that never comes back online
+  can leave a file behind.
+- **Reading.** A device shows the local copy and otherwise downloads the file
+  on demand (signed in, with the shop's access), and keeps it.
 
 ## Server functions
 

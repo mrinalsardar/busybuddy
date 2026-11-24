@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/images/product_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
 import '../../../core/providers/core_providers.dart';
@@ -114,6 +115,7 @@ class ProductListScreen extends ConsumerWidget {
                       final isLow = p.isLowStock;
                       return _ProductCard(
                         name: p.name,
+                        imagePath: p.imagePath,
                         category: p.category ?? 'Uncategorized',
                         priceMinor: p.priceMinor,
                         avgSoldMinor: avgPrices[p.id],
@@ -210,6 +212,7 @@ class ProductListScreen extends ConsumerWidget {
 
 class _ProductCard extends StatelessWidget {
   final String name;
+  final String? imagePath;
   final String category;
   final int priceMinor;
   final int? avgSoldMinor;
@@ -221,6 +224,7 @@ class _ProductCard extends StatelessWidget {
 
   const _ProductCard({
     required this.name,
+    required this.imagePath,
     required this.category,
     required this.priceMinor,
     required this.avgSoldMinor,
@@ -243,17 +247,7 @@ class _ProductCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Icon placeholder
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryPurple.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.inventory_2_outlined,
-                    color: AppTheme.primaryPurple, size: 22),
-              ),
+              ProductImage(imagePath: imagePath, size: 48),
               const SizedBox(width: 14),
               // Info
               Expanded(

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:powersync/powersync.dart';
@@ -30,8 +32,15 @@ class DatabaseHelper {
     return database;
   }
 
+  Future<String> _dbPath() async => _path ?? join((await getApplicationSupportDirectory()).path, _dbName);
+
+  /// Directory of the product image files, next to the database so that they
+  /// are cleared with it. The OS never purges it (a picture added offline may
+  /// exist nowhere else yet).
+  Future<Directory> productImageDir() async => Directory(join(dirname(await _dbPath()), 'product_images'));
+
   Future<PowerSyncDatabase> _open() async {
-    final path = _path ?? join((await getApplicationSupportDirectory()).path, _dbName);
+    final path = await _dbPath();
     final db = PowerSyncDatabase(schema: schema, path: path);
     try {
       await db.initialize();
@@ -53,10 +62,12 @@ class DatabaseHelper {
     await (await database).disconnect();
   }
 
-  /// Stops syncing and deletes all local data, including local-only tables
-  /// and changes not yet uploaded.
+  /// Stops syncing and deletes all local data, including local-only tables,
+  /// changes not yet uploaded and the product image files.
   Future<void> disconnectAndClear() async {
     await (await database).disconnectAndClear();
+    final images = await productImageDir();
+    if (await images.exists()) await images.delete(recursive: true);
   }
 
   /// Wipe local data — used when user chooses "start fresh". Data already on

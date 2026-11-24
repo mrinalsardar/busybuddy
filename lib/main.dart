@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/auth/auth_repository.dart';
+import 'core/db/database_helper.dart';
 import 'core/db/supabase_connector.dart';
+import 'core/images/image_providers.dart';
+import 'core/images/product_image_store.dart';
 import 'core/db/sync_session.dart';
 import 'core/providers/core_providers.dart';
 import 'core/theme/app_theme.dart';
@@ -36,9 +39,14 @@ Future<void> main() async {
 
   // The router needs to know before the first frame whether a stored session
   // exists. Initializing reads it from the device, so it works offline.
-  final auth = await _initAuth();
+  final backend = await _initAuth();
   runApp(ProviderScope(
-    overrides: [if (auth != null) authRepositoryProvider.overrideWithValue(auth)],
+    overrides: [
+      if (backend != null) ...[
+        authRepositoryProvider.overrideWithValue(backend.auth),
+        productImageStoreProvider.overrideWithValue(backend.images),
+      ],
+    ],
     child: const BusyBuddyApp(),
   ));
 }
@@ -46,7 +54,7 @@ Future<void> main() async {
 /// Starts Supabase Auth and syncing when a backend is configured. Returns
 /// null when it is not, or cannot start: the app then runs on the local
 /// database only, without sign-in.
-Future<AuthRepository?> _initAuth() async {
+Future<({AuthRepository auth, ProductImageStore images})?> _initAuth() async {
   if (_supabaseUrl.isEmpty || _supabaseAnonKey.isEmpty || _powerSyncUrl.isEmpty) return null;
   try {
     await Supabase.initialize(url: _supabaseUrl, publishableKey: _supabaseAnonKey);
@@ -55,11 +63,12 @@ Future<AuthRepository?> _initAuth() async {
     return null;
   }
   final client = Supabase.instance.client;
-  final sync = SyncSession(client, SupabaseConnector(client, powerSyncUrl: _powerSyncUrl));
+  final images = ProductImageStore(client, directory: DatabaseHelper().productImageDir);
+  final sync = SyncSession(client, SupabaseConnector(client, powerSyncUrl: _powerSyncUrl, images: images));
   // Decide before the first frame whether the stored session may use the
   // local data (see SyncSession).
   await sync.init();
-  return SupabaseAuthRepository(client, sync: sync);
+  return (auth: SupabaseAuthRepository(client, sync: sync), images: images);
 }
 
 class BusyBuddyApp extends ConsumerWidget {
