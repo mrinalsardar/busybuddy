@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/images/product_image.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
 import '../../../core/providers/core_providers.dart';
@@ -149,7 +150,7 @@ class ProductListScreen extends ConsumerWidget {
     categoriesAsync.whenData((categories) {
       showModalBottomSheet(
         context: context,
-        backgroundColor: AppTheme.surfaceCard,
+        backgroundColor: context.colors.card,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -164,7 +165,7 @@ class ProductListScreen extends ConsumerWidget {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppTheme.textSecondary.withValues(alpha: 0.3),
+                    color: context.colors.textSecondary.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -238,7 +239,7 @@ class _ProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.surfaceCard,
+      color: context.colors.card,
       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
       child: InkWell(
         onTap: onTap,
@@ -257,14 +258,14 @@ class _ProductCard extends StatelessWidget {
                     Text(name,
                         style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w600,
-                            color: AppTheme.textPrimary),
+                            color: context.colors.textPrimary),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 3),
                     Text(category,
                         style: TextStyle(
                             fontWeight: FontWeight.w400,
-                            fontSize: 12, color: AppTheme.textSecondary)),
+                            fontSize: 12, color: context.colors.textSecondary)),
                   ],
                 ),
               ),
@@ -276,25 +277,25 @@ class _ProductCard extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary)),
+                          color: context.colors.textPrimary)),
                   if (avgSoldMinor != null)
                     Text('Avg sold ${money.format(avgSoldMinor!)}',
                         style: TextStyle(
                             fontWeight: FontWeight.w400,
-                            fontSize: 11, color: AppTheme.textSecondary)),
+                            fontSize: 11, color: context.colors.textSecondary)),
                   if (costMinor > 0)
                     Text('Cost ${money.format(costMinor)}',
                         style: TextStyle(
                             fontWeight: FontWeight.w400,
-                            fontSize: 11, color: AppTheme.textSecondary)),
+                            fontSize: 11, color: context.colors.textSecondary)),
                   const SizedBox(height: 3),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: isLowStock
-                          ? AppTheme.error.withValues(alpha: 0.12)
-                          : AppTheme.success.withValues(alpha: 0.12),
+                          ? context.colors.error.withValues(alpha: 0.12)
+                          : context.colors.success.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -302,7 +303,7 @@ class _ProductCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: isLowStock ? AppTheme.error : AppTheme.success,
+                        color: isLowStock ? context.colors.error : context.colors.success,
                       ),
                     ),
                   ),
@@ -328,19 +329,19 @@ class _NoMatchState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.search_off_rounded,
-                size: 48, color: AppTheme.textSecondary),
+            Icon(Icons.search_off_rounded,
+                size: 48, color: context.colors.textSecondary),
             const SizedBox(height: 16),
             Text('No matching products',
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary)),
+                    color: context.colors.textPrimary)),
             const SizedBox(height: 8),
             Text('Nothing matches your search or filter',
                 style: TextStyle(
                     fontWeight: FontWeight.w400,
-                    fontSize: 14, color: AppTheme.textSecondary)),
+                    fontSize: 14, color: context.colors.textSecondary)),
             const SizedBox(height: 24),
             OutlinedButton(
               onPressed: onClear,
@@ -380,12 +381,12 @@ class _EmptyState extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary)),
+                    color: context.colors.textPrimary)),
             const SizedBox(height: 8),
             Text('Add your first product to get started',
                 style: TextStyle(
                     fontWeight: FontWeight.w400,
-                    fontSize: 14, color: AppTheme.textSecondary)),
+                    fontSize: 14, color: context.colors.textSecondary)),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: onAdd,

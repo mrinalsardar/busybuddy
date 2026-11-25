@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/auth/auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/models/business_profile.dart';
 
@@ -58,7 +59,7 @@ class ProfileTypeScreen extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 34,
                         fontWeight: FontWeight.w800,
-                        color: AppTheme.textPrimary,
+                        color: context.colors.textPrimary,
                         height: 1.15,
                       ),
                     ),
@@ -68,7 +69,7 @@ class ProfileTypeScreen extends ConsumerWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.w400,
                         fontSize: 15,
-                        color: AppTheme.textSecondary,
+                        color: context.colors.textSecondary,
                       ),
                     ),
                   ],
@@ -106,7 +107,7 @@ class ProfileTypeScreen extends ConsumerWidget {
                         } on AuthFailure catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
+                              SnackBar(content: Text('$e'), backgroundColor: context.colors.error),
                             );
                           }
                         }

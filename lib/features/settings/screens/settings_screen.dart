@@ -5,7 +5,8 @@ import '../../../core/auth/auth_repository.dart';
 import '../../../core/db/database_helper.dart';
 import '../../../core/models/business_profile.dart';
 import '../../../core/providers/core_providers.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/theme_mode_provider.dart';
 import '../../../core/utils/money.dart';
 import '../../sales/providers/sales_providers.dart';
 import '../providers/settings_providers.dart';
@@ -19,14 +20,25 @@ class SettingsScreen extends ConsumerWidget {
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save setting: $e'), backgroundColor: AppTheme.error),
+        SnackBar(content: Text('Could not save setting: $e'), backgroundColor: context.colors.error),
+      );
+    }
+  }
+
+  Future<void> _setThemeMode(BuildContext context, WidgetRef ref, ThemeMode mode) async {
+    try {
+      await ref.read(themeModeProvider.notifier).set(mode);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save setting: $e'), backgroundColor: context.colors.error),
       );
     }
   }
 
   void _showError(BuildContext context, Object e) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
+      SnackBar(content: Text('$e'), backgroundColor: context.colors.error),
     );
   }
 
@@ -112,12 +124,29 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
+          // A device preference, so staff can change it too: it sits above the
+          // owner-only notice.
+          _section(context, 'Appearance'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: SegmentedButton<ThemeMode>(
+              key: const Key('themeMode'),
+              segments: const [
+                ButtonSegment(value: ThemeMode.light, label: Text('Light')),
+                ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+                ButtonSegment(value: ThemeMode.system, label: Text('System')),
+              ],
+              selected: {ref.watch(themeModeProvider)},
+              onSelectionChanged: (s) => _setThemeMode(context, ref, s.single),
+            ),
+          ),
+          const SizedBox(height: 16),
           if (!isOwner)
             const ListTile(
               leading: Icon(Icons.lock_outline_rounded),
               title: Text('Only the shop owner can change these settings.'),
             ),
-          _section('Selling'),
+          _section(context, 'Selling'),
           SwitchListTile(
             title: const Text('Allow selling beyond stock'),
             subtitle: const Text(
@@ -128,7 +157,7 @@ class SettingsScreen extends ConsumerWidget {
                 : null,
           ),
           const SizedBox(height: 16),
-          _section('Currency'),
+          _section(context, 'Currency'),
           if (canEditCurrency && isOwner) ...[
             ListTile(
               title: const Text('Currency'),
@@ -165,7 +194,7 @@ class SettingsScreen extends ConsumerWidget {
           if (signedIn) ...[
             const SizedBox(height: 16),
             if (isOwner) ...[
-              _section('Staff'),
+              _section(context, 'Staff'),
               ListTile(
                 leading: const Icon(Icons.person_add_alt_1_rounded),
                 title: const Text('Invite staff'),
@@ -174,7 +203,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
             ],
-            _section('Account'),
+            _section(context, 'Account'),
             ListTile(
               leading: const Icon(Icons.account_circle_outlined),
               title: Text(ref.watch(authRepositoryProvider).email ?? 'Signed in'),
@@ -190,7 +219,7 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _section(String title) {
+  Widget _section(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Text(
@@ -199,7 +228,7 @@ class SettingsScreen extends ConsumerWidget {
           fontSize: 13,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.8,
-          color: AppTheme.textSecondary,
+          color: context.colors.textSecondary,
         ),
       ),
     );
