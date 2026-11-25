@@ -112,11 +112,6 @@ class AppColors extends ThemeExtension<AppColors> {
 }
 
 extension AppColorsContext on BuildContext {
-  /// The active theme's colours. A theme without them (a bare [MaterialApp]
-  /// in a test) gets the set matching its brightness.
-  AppColors get colors {
-    final theme = Theme.of(this);
-    return theme.extension<AppColors>() ??
-        (theme.brightness == Brightness.dark ? AppColors.dark : AppColors.light);
-  }
+  /// The active theme's colours.
+  AppColors get colors => Theme.of(this).extension<AppColors>()!;
 }

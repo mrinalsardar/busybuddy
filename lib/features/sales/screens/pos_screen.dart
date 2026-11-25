@@ -121,7 +121,6 @@ Future<void> _addToCart(BuildContext context, WidgetRef ref, Product product) as
   if (variants.isNotEmpty) {
     variant = await showModalBottomSheet<ProductVariant>(
       context: context,
-      backgroundColor: context.colors.card,
       builder: (_) => _VariantPicker(
         product: product,
         variants: variants,

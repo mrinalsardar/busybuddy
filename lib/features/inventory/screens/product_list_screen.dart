@@ -150,11 +150,10 @@ class ProductListScreen extends ConsumerWidget {
     categoriesAsync.whenData((categories) {
       showModalBottomSheet(
         context: context,
-        backgroundColor: context.colors.card,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        builder: (_) => Padding(
+        builder: (sheetContext) => Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -165,7 +164,7 @@ class ProductListScreen extends ConsumerWidget {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: context.colors.textSecondary.withValues(alpha: 0.3),
+                    color: sheetContext.colors.textSecondary.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),

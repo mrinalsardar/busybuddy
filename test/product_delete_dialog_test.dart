@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:busybuddy/core/dao/daos.dart';
 import 'package:busybuddy/core/models/models.dart';
+import 'package:busybuddy/core/theme/app_theme.dart';
 import 'package:busybuddy/features/inventory/screens/product_form_screen.dart';
 
 import 'package:busybuddy/core/providers/core_providers.dart';
@@ -52,7 +53,7 @@ Widget app() {
       productDaoProvider.overrideWithValue(dao),
       businessProfileDaoProvider.overrideWithValue(FakeProfileDao()),
     ],
-    child: MaterialApp.router(routerConfig: router),
+    child: MaterialApp.router(theme: AppTheme.darkTheme, routerConfig: router),
   );
 }
 

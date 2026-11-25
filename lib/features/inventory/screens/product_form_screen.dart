@@ -193,7 +193,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: context.colors.card,
         title: const Text('Delete Product?'),
         content: const Text(
             'The product will be removed from inventory and POS. Past sales keep their records.'),
@@ -201,7 +200,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete', style: TextStyle(color: context.colors.error)),
+            child: Text('Delete', style: TextStyle(color: ctx.colors.error)),
           ),
         ],
       ),
