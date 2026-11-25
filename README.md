@@ -11,7 +11,7 @@ The app modules live under `lib/features/`:
 - **Inventory** (`inventory`): add, edit, search and filter products, with optional variants and expiry dates depending on the shop type. Products are archived, not deleted, once they have been sold. Stock changes are recorded as stock movements.
 - **Point of sale** (`sales`): build a cart, edit the price of a line and charge the sale. Selling beyond stock is rejected unless the shop allows it.
 - **Sales history** (`sales`): list of recorded sales; tap a sale to see its line items, payment and totals.
-- **Settings** (`settings`): allow selling beyond stock, currency and decimal places (locked once the shop has products or sales), staff invite codes (owner only) and sign-out.
+- **Settings** (`settings`): choose a Light, Dark or System theme (System, the default, follows the device setting; the choice is saved on the device, is not synced, and staff can change it too), allow selling beyond stock, currency and decimal places (locked once the shop has products or sales), staff invite codes (owner only) and sign-out.
 
 Money is stored as integer minor units, so amounts never use floating point.
 
