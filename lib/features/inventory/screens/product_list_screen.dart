@@ -74,7 +74,7 @@ class ProductListScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list_rounded),
-            onPressed: () => _showCategoryFilter(context, ref),
+            onPressed: () => _showCategoryFilter(context),
           ),
         ],
       ),
@@ -143,68 +143,92 @@ class ProductListScreen extends ConsumerWidget {
     );
   }
 
-  void _showCategoryFilter(BuildContext context, WidgetRef ref) {
-    final categoriesAsync = ref.read(categoryListProvider);
-    final current = ref.read(inventoryCategoryFilterProvider);
+  void _showCategoryFilter(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _CategoryFilterSheet(),
+    );
+  }
+}
 
-    categoriesAsync.whenData((categories) {
-      showModalBottomSheet(
-        context: context,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (sheetContext) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+/// Opens at once and watches the categories itself, so it can show them as
+/// they load.
+class _CategoryFilterSheet extends ConsumerWidget {
+  const _CategoryFilterSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final categoriesAsync = ref.watch(categoryListProvider);
+    final current = ref.watch(inventoryCategoryFilterProvider);
+
+    void select(String? category) {
+      ref.read(inventoryCategoryFilterProvider.notifier).state = category;
+      Navigator.pop(context);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: context.colors.textSecondary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('Filter by Category',
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: sheetContext.colors.textSecondary.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+              _FilterChip(
+                label: 'All',
+                selected: current == null,
+                onTap: () => select(null),
               ),
-              const SizedBox(height: 20),
-              Text('Filter by Category',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _FilterChip(
-                    label: 'All',
-                    selected: current == null,
-                    onTap: () {
-                      ref.read(inventoryCategoryFilterProvider.notifier).state =
-                          null;
-                      Navigator.pop(context);
-                    },
-                  ),
-                  ...categories.map((c) => _FilterChip(
-                        label: c,
-                        selected: current == c,
-                        onTap: () {
-                          ref
-                              .read(inventoryCategoryFilterProvider.notifier)
-                              .state = c;
-                          Navigator.pop(context);
-                        },
-                      )),
-                ],
-              ),
-              const SizedBox(height: 20),
+              ...?categoriesAsync.value?.map((c) => _FilterChip(
+                    label: c,
+                    selected: current == c,
+                    onTap: () => select(c),
+                  )),
             ],
           ),
-        ),
-      );
-    });
+          // Errors come first: Riverpod stays "loading" while it retries.
+          if (categoriesAsync.hasError)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Row(
+                children: [
+                  const Expanded(child: Text("Couldn't load categories")),
+                  TextButton(
+                    onPressed: () => ref.invalidate(categoryListProvider),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          else if (!categoriesAsync.hasValue)
+            const Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
   }
 }
 

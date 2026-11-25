@@ -55,7 +55,9 @@ final avgSellingPriceProvider = FutureProvider<Map<String, int>>((ref) async {
 });
 
 // ── Category list ──────────────────────────────────────
-final categoryListProvider = FutureProvider<List<String>>((ref) async {
+/// Auto-disposed, so each open of the filter sheet queries again and never
+/// starts from an old list.
+final categoryListProvider = FutureProvider.autoDispose<List<String>>((ref) async {
   final profile = ref.watch(activeProfileProvider).value;
   if (profile == null) return [];
   return ref.read(productDaoProvider).getCategories(profile.id);
