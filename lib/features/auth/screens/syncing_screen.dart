@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_colors.dart';
 
 /// Shown to a signed-in user whose device has no shop yet, until the first
 /// sync has finished. The shop may already exist on the server (another
@@ -24,11 +24,11 @@ class SyncingScreen extends ConsumerWidget {
               const SizedBox(height: 24),
               Text('Loading your shop',
                   style: TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                      fontSize: 24, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
               const SizedBox(height: 8),
               Text(
                 'Downloading your data for the first time. This needs an internet connection.',
-                style: TextStyle(fontSize: 15, color: AppTheme.textSecondary),
+                style: TextStyle(fontSize: 15, color: context.colors.textSecondary),
               ),
               const SizedBox(height: 24),
               TextButton(
@@ -38,7 +38,7 @@ class SyncingScreen extends ConsumerWidget {
                   } on AuthFailure catch (e) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
+                        SnackBar(content: Text('$e'), backgroundColor: context.colors.error),
                       );
                     }
                   }

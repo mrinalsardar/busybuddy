@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/models/sale.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
 import '../../../core/providers/core_providers.dart';
@@ -46,12 +47,12 @@ class SaleHistoryScreen extends ConsumerWidget {
                       style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary)),
+                          color: context.colors.textPrimary)),
                   const SizedBox(height: 8),
                   Text('Complete your first sale in the POS tab',
                       style: TextStyle(
                           fontWeight: FontWeight.w400,
-                          fontSize: 14, color: AppTheme.textSecondary)),
+                          fontSize: 14, color: context.colors.textSecondary)),
                 ],
               ),
             );
@@ -65,7 +66,7 @@ class SaleHistoryScreen extends ConsumerWidget {
               itemBuilder: (_, i) {
                 final s = sales[i];
                 return Material(
-                  color: AppTheme.surfaceCard,
+                  color: context.colors.card,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                   child: InkWell(
                   borderRadius: BorderRadius.circular(AppTheme.radiusMd),
@@ -84,11 +85,11 @@ class SaleHistoryScreen extends ConsumerWidget {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: AppTheme.success.withValues(alpha: 0.12),
+                          color: context.colors.success.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.receipt_outlined,
-                            color: AppTheme.success, size: 22),
+                        child: Icon(Icons.receipt_outlined,
+                            color: context.colors.success, size: 22),
                       ),
                       const SizedBox(width: 14),
                       // Info
@@ -100,7 +101,7 @@ class SaleHistoryScreen extends ConsumerWidget {
                                 style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
-                                    color: AppTheme.textPrimary)),
+                                    color: context.colors.textPrimary)),
                             const SizedBox(height: 3),
                             Row(
                               children: [
@@ -110,7 +111,7 @@ class SaleHistoryScreen extends ConsumerWidget {
                                   const SizedBox(width: 6),
                                   _badge(
                                       '-${money.format(s.discountMinor)}',
-                                      AppTheme.warning),
+                                      context.colors.warning),
                                 ],
                               ],
                             ),
@@ -122,7 +123,7 @@ class SaleHistoryScreen extends ConsumerWidget {
                           style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w800,
-                              color: AppTheme.success)),
+                              color: context.colors.success)),
                     ],
                   ),
                   ),
@@ -182,7 +183,7 @@ class SaleDetailSheet extends ConsumerWidget {
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
             Text(sale.paymentMethod.toUpperCase(),
-                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
             const Divider(height: 24),
             itemsAsync.when(
               loading: () => const Padding(
@@ -204,11 +205,11 @@ class SaleDetailSheet extends ConsumerWidget {
                                     children: [
                                       Text(i.productName, style: bold),
                                       Text('${i.qty} × ${money.format(i.unitPriceMinor)}',
-                                          style: TextStyle(color: AppTheme.textSecondary)),
+                                          style: TextStyle(color: context.colors.textSecondary)),
                                       if (isOwner)
                                         Text('Cost ${money.format(i.costPriceMinor)} each',
                                             style: TextStyle(
-                                                fontSize: 12, color: AppTheme.textSecondary)),
+                                                fontSize: 12, color: context.colors.textSecondary)),
                                     ],
                                   ),
                                 ),

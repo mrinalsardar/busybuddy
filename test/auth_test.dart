@@ -8,6 +8,7 @@ import 'package:busybuddy/core/db/local_owner.dart';
 import 'package:busybuddy/core/db/sync_session.dart';
 import 'package:busybuddy/core/models/models.dart';
 import 'package:busybuddy/core/providers/core_providers.dart';
+import 'package:busybuddy/core/theme/app_theme.dart';
 import 'package:busybuddy/features/auth/screens/login_screen.dart';
 import 'package:busybuddy/features/auth/screens/syncing_screen.dart';
 import 'package:busybuddy/features/profile/screens/join_shop_screen.dart';
@@ -336,7 +337,7 @@ void main() {
           businessProfileDaoProvider.overrideWithValue(dao),
           syncStateProvider.overrideWith((_) => status.stream),
         ],
-        child: const MaterialApp(home: SettingsScreen()),
+        child: MaterialApp(theme: AppTheme.lightTheme, home: const SettingsScreen()),
       ));
       await settle(tester);
     }

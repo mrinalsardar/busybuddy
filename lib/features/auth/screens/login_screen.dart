@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_colors.dart';
 
 /// Email one-time-code sign-in. Step 1 asks for the email and sends a code;
 /// step 2 asks for the code. A successful sign-in changes [authProvider], and
@@ -79,14 +79,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   style: TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.w800,
-                      color: AppTheme.textPrimary,
+                      color: context.colors.textPrimary,
                       height: 1.15)),
               const SizedBox(height: 8),
               Text(
                 _codeSent
                     ? 'We emailed a code to $_email.'
                     : 'We email you a one-time code. No password needed.',
-                style: TextStyle(fontSize: 15, color: AppTheme.textSecondary),
+                style: TextStyle(fontSize: 15, color: context.colors.textSecondary),
               ),
               const SizedBox(height: 32),
               if (!_codeSent)
@@ -117,7 +117,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: AppTheme.error)),
+                Text(_error!, style: TextStyle(color: context.colors.error)),
               ],
               const SizedBox(height: 24),
               SizedBox(
@@ -126,10 +126,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: ElevatedButton(
                   onPressed: _busy ? null : (_codeSent ? _verify : _sendCode),
                   child: _busy
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 24,
                           height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: context.colors.buttonSpinner))
                       : Text(_codeSent ? 'Verify' : 'Send code'),
                 ),
               ),

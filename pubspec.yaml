@@ -24,6 +24,9 @@ dependencies:
   flutter_riverpod: ^3.5.0
   riverpod_annotation: ^4.0.8
 
+  # Per-device preferences (theme choice); not synced
+  shared_preferences: ^2.5.6
+
   # Navigation
   go_router: ^18.1.4
 

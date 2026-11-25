@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/models/business_profile.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
 
@@ -54,7 +55,7 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save profile: $e'), backgroundColor: AppTheme.error),
+        SnackBar(content: Text('Could not save profile: $e'), backgroundColor: context.colors.error),
       );
       return;
     }
@@ -102,7 +103,7 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
-                            color: AppTheme.textPrimary,
+                            color: context.colors.textPrimary,
                           ),
                         ),
                         Text(
@@ -110,7 +111,7 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w400,
                             fontSize: 14,
-                            color: AppTheme.textSecondary,
+                            color: context.colors.textSecondary,
                           ),
                         ),
                       ],
@@ -123,13 +124,13 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppTheme.accent.withValues(alpha: 0.08),
+                    color: context.colors.accent.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    border: Border.all(color: AppTheme.accent.withValues(alpha: 0.25)),
+                    border: Border.all(color: context.colors.accent.withValues(alpha: 0.25)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.auto_awesome, color: AppTheme.accent, size: 20),
+                      Icon(Icons.auto_awesome, color: context.colors.accent, size: 20),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -141,7 +142,7 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: AppTheme.accent,
+                            color: context.colors.accent,
                           ),
                         ),
                       ),
@@ -199,12 +200,12 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
                   child: ElevatedButton(
                     onPressed: _saving ? null : _save,
                     child: _saving
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 24,
                             height: 24,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              color: Colors.white,
+                              color: context.colors.buttonSpinner,
                             ),
                           )
                         : const Text('Get Started'),
@@ -225,7 +226,7 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
       style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: AppTheme.textSecondary,
+        color: context.colors.textSecondary,
         letterSpacing: 0.5,
       ),
     );

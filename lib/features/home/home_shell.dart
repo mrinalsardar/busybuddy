@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 
 /// Bottom‐nav shell that wraps all main tabs.
@@ -29,10 +30,10 @@ class HomeShell extends StatelessWidget {
       body: child,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: AppTheme.surfaceCard,
+          color: context.colors.card,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
+              color: context.colors.shadow,
               blurRadius: 20,
               offset: const Offset(0, -4),
             ),
@@ -101,7 +102,7 @@ class _NavItem extends StatelessWidget {
             Icon(
               icon,
               size: 22,
-              color: selected ? AppTheme.primaryPurple : AppTheme.textSecondary,
+              color: selected ? AppTheme.primaryPurple : context.colors.textSecondary,
             ),
             if (selected) ...[
               const SizedBox(width: 8),

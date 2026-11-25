@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/auth/auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_colors.dart';
 
 /// Joins an existing shop as staff with an invite code from its owner. Needs
 /// a connection. Once joined, the shop's data downloads with the next sync;
@@ -73,10 +73,10 @@ class _JoinShopScreenState extends ConsumerState<JoinShopScreen> {
           const SizedBox(height: 24),
           Text('You joined the shop',
               style: TextStyle(
-                  fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                  fontSize: 24, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
           const SizedBox(height: 8),
           Text('Downloading its data. This needs an internet connection.',
-              style: TextStyle(fontSize: 15, color: AppTheme.textSecondary)),
+              style: TextStyle(fontSize: 15, color: context.colors.textSecondary)),
         ],
       );
 
@@ -86,10 +86,10 @@ class _JoinShopScreenState extends ConsumerState<JoinShopScreen> {
           const SizedBox(height: 8),
           Text('Join a shop',
               style: TextStyle(
-                  fontSize: 28, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+                  fontSize: 28, fontWeight: FontWeight.w800, color: context.colors.textPrimary)),
           const SizedBox(height: 8),
           Text('Ask the shop owner for an invite code (Settings, Invite staff).',
-              style: TextStyle(fontSize: 15, color: AppTheme.textSecondary)),
+              style: TextStyle(fontSize: 15, color: context.colors.textSecondary)),
           const SizedBox(height: 24),
           TextField(
             key: const Key('inviteCode'),
@@ -113,7 +113,7 @@ class _JoinShopScreenState extends ConsumerState<JoinShopScreen> {
                   : Text(_error!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.error)),
+                      style: TextStyle(color: context.colors.error)),
             ),
           ),
           const SizedBox(height: 12),
@@ -123,10 +123,10 @@ class _JoinShopScreenState extends ConsumerState<JoinShopScreen> {
             child: ElevatedButton(
               onPressed: _busy ? null : _join,
               child: _busy
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 24,
                       height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: context.colors.buttonSpinner))
                   : const Text('Join shop'),
             ),
           ),

@@ -12,6 +12,7 @@ import '../../../core/images/product_image_store.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
 import '../providers/inventory_providers.dart';
@@ -192,7 +193,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceCard,
         title: const Text('Delete Product?'),
         content: const Text(
             'The product will be removed from inventory and POS. Past sales keep their records.'),
@@ -200,7 +200,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: AppTheme.error)),
+            child: Text('Delete', style: TextStyle(color: ctx.colors.error)),
           ),
         ],
       ),
@@ -290,8 +290,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                             _newImage = null;
                             _removeImage = true;
                           }),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.error),
-                  label: const Text('Remove', style: TextStyle(color: AppTheme.error)),
+                  icon: Icon(Icons.delete_outline_rounded, size: 18, color: context.colors.error),
+                  label: Text('Remove', style: TextStyle(color: context.colors.error)),
                 ),
             ],
           ),
@@ -302,7 +302,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppTheme.error),
+      SnackBar(content: Text(message), backgroundColor: context.colors.error),
     );
   }
 
@@ -318,7 +318,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         actions: [
           if (_isEdit)
             IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.error),
+              icon: Icon(Icons.delete_outline_rounded, color: context.colors.error),
               onPressed: _delete,
             ),
         ],
@@ -384,7 +384,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                         ? Text('Quantity is the total of the variants below',
                             style: TextStyle(
                                 fontWeight: FontWeight.w400,
-                                fontSize: 13, color: AppTheme.textSecondary))
+                                fontSize: 13, color: context.colors.textSecondary))
                         : _field('Quantity', _stockCtrl,
                             Icons.inventory_rounded,
                             keyboard: TextInputType.number,
@@ -429,8 +429,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                       style: TextStyle(
                         fontWeight: FontWeight.w400,
                         color: _expiryDate != null
-                            ? AppTheme.textPrimary
-                            : AppTheme.textSecondary,
+                            ? context.colors.textPrimary
+                            : context.colors.textSecondary,
                       ),
                     ),
                   ),
@@ -470,9 +470,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppTheme.surfaceCard,
+                        color: context.colors.card,
                         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                        border: Border.all(color: AppTheme.dividerColor),
+                        border: Border.all(color: context.colors.divider),
                       ),
                       child: Column(
                         children: [
@@ -514,8 +514,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.remove_circle_outline,
-                                    color: AppTheme.error, size: 20),
+                                icon: Icon(Icons.remove_circle_outline,
+                                    color: context.colors.error, size: 20),
                                 onPressed: () {
                                   setState(() => _variants.removeAt(i));
                                   // Dispose once the row's fields are gone.
@@ -542,11 +542,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 child: ElevatedButton(
                   onPressed: _saving ? null : _save,
                   child: _saving
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 24,
                           height: 24,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2.5, color: Colors.white))
+                              strokeWidth: 2.5, color: context.colors.buttonSpinner))
                       : Text(_isEdit ? 'Update Product' : 'Save Product'),
                 ),
               ),
@@ -564,7 +564,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         fontSize: 13,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.8,
-        color: AppTheme.textSecondary,
+        color: context.colors.textSecondary,
       ),
     );
   }

@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../sales/providers/sales_providers.dart';
 
 /// Shown when a different account signed in while the previous account still
@@ -27,7 +27,7 @@ class _OwnerConflictScreenState extends ConsumerState<OwnerConflictScreen> {
     } on AuthFailure catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppTheme.error),
+          SnackBar(content: Text('$e'), backgroundColor: context.colors.error),
         );
       }
     } finally {
@@ -68,12 +68,12 @@ class _OwnerConflictScreenState extends ConsumerState<OwnerConflictScreen> {
             children: [
               Text('Unsynced changes from another account',
                   style: TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                      fontSize: 24, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
               const SizedBox(height: 8),
               Text(
                 'This device holds changes made as $account that have not uploaded yet. '
                 'Sign back in as that account while online so they can upload, or discard them.',
-                style: TextStyle(fontSize: 15, color: AppTheme.textSecondary),
+                style: TextStyle(fontSize: 15, color: context.colors.textSecondary),
               ),
               const SizedBox(height: 24),
               if (_busy)
@@ -86,7 +86,7 @@ class _OwnerConflictScreenState extends ConsumerState<OwnerConflictScreen> {
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: _confirmDiscard,
-                  child: Text('Discard changes and continue', style: TextStyle(color: AppTheme.error)),
+                  child: Text('Discard changes and continue', style: TextStyle(color: context.colors.error)),
                 ),
               ],
             ],

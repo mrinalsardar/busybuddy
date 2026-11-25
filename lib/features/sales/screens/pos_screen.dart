@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/images/product_image.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/money.dart';
 import '../../../core/utils/plural.dart';
@@ -29,7 +30,7 @@ class PosScreen extends ConsumerWidget {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             todayAsync.when(
               data: (t) => Text("Today's sales: ${money.format(t)}",
-                  style: TextStyle(fontWeight: FontWeight.w400, fontSize: 12, color: AppTheme.textSecondary)),
+                  style: TextStyle(fontWeight: FontWeight.w400, fontSize: 12, color: context.colors.textSecondary)),
               loading: () => const SizedBox.shrink(),
               error: (_, _) => const SizedBox.shrink(),
             ),
@@ -71,10 +72,10 @@ class _ProductPicker extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.point_of_sale_rounded,
-                    size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.4)),
+                    size: 48, color: context.colors.textSecondary.withValues(alpha: 0.4)),
                 const SizedBox(height: 12),
                 Text('Add products in Inventory first',
-                    style: TextStyle(fontWeight: FontWeight.w400, color: AppTheme.textSecondary)),
+                    style: TextStyle(fontWeight: FontWeight.w400, color: context.colors.textSecondary)),
               ],
             ),
           );
@@ -120,7 +121,6 @@ Future<void> _addToCart(BuildContext context, WidgetRef ref, Product product) as
   if (variants.isNotEmpty) {
     variant = await showModalBottomSheet<ProductVariant>(
       context: context,
-      backgroundColor: AppTheme.surfaceCard,
       builder: (_) => _VariantPicker(
         product: product,
         variants: variants,
@@ -137,7 +137,7 @@ Future<void> _addToCart(BuildContext context, WidgetRef ref, Product product) as
 void _showMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message), backgroundColor: AppTheme.error));
+    ..showSnackBar(SnackBar(content: Text(message), backgroundColor: context.colors.error));
 }
 
 class _VariantPicker extends StatelessWidget {
@@ -159,14 +159,14 @@ class _VariantPicker extends StatelessWidget {
             child: Text(product.name,
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary)),
+                    color: context.colors.textPrimary)),
           ),
           for (final v in variants)
             ListTile(
               enabled: allowOversell || v.stockQty > 0,
               title: Text(v.displayName.isEmpty ? 'Variant' : v.displayName),
               trailing: Text('${v.stockQty} in stock',
-                  style: TextStyle(color: v.stockQty <= 0 ? AppTheme.error : null)),
+                  style: TextStyle(color: v.stockQty <= 0 ? context.colors.error : null)),
               onTap: () => Navigator.pop(context, v),
             ),
         ],
@@ -195,7 +195,7 @@ class _ProductTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.surfaceCard,
+      color: context.colors.card,
       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
       child: InkWell(
         onTap: canSell ? onTap : null,
@@ -217,7 +217,7 @@ class _ProductTile extends StatelessWidget {
                 Text(name,
                     style: TextStyle(
                         fontSize: 12, fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary),
+                        color: context.colors.textPrimary),
                     maxLines: 2,
                     textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis),
@@ -226,7 +226,7 @@ class _ProductTile extends StatelessWidget {
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: AppTheme.accent)),
+                        color: context.colors.accent)),
               ],
             ),
           ),
@@ -247,11 +247,11 @@ class _CartPanel extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.surfaceCard,
+        color: context.colors.card,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
+            color: context.colors.shadow,
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -270,7 +270,7 @@ class _CartPanel extends ConsumerWidget {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppTheme.textSecondary.withValues(alpha: 0.3),
+                    color: context.colors.textSecondary.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -298,7 +298,7 @@ class _CartPanel extends ConsumerWidget {
                                   Text(ci.displayName,
                                       style: TextStyle(
                                           fontWeight: FontWeight.w400,
-                                          fontSize: 13, color: AppTheme.textPrimary),
+                                          fontSize: 13, color: context.colors.textPrimary),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),
                                   Row(
@@ -309,10 +309,10 @@ class _CartPanel extends ConsumerWidget {
                                           style: TextStyle(
                                               fontWeight: FontWeight.w400,
                                               fontSize: 11,
-                                              color: AppTheme.textSecondary))),
+                                              color: context.colors.textSecondary))),
                                       const SizedBox(width: 4),
-                                      const Icon(Icons.edit_outlined,
-                                          size: 12, color: AppTheme.textSecondary),
+                                      Icon(Icons.edit_outlined,
+                                          size: 12, color: context.colors.textSecondary),
                                     ],
                                   ),
                                 ],
@@ -332,7 +332,7 @@ class _CartPanel extends ConsumerWidget {
                                 child: Text('${ci.qty}',
                                     style: TextStyle(
                                         fontSize: 14, fontWeight: FontWeight.w700,
-                                        color: AppTheme.textPrimary)),
+                                        color: context.colors.textPrimary)),
                               ),
                               _StepperBtn(
                                 icon: Icons.add,
@@ -354,7 +354,7 @@ class _CartPanel extends ConsumerWidget {
                               softWrap: false,
                               style: TextStyle(
                                   fontSize: 14, fontWeight: FontWeight.w700,
-                                  color: AppTheme.textPrimary),
+                                  color: context.colors.textPrimary),
                             ),
                           ),
                         ],
@@ -375,11 +375,11 @@ class _CartPanel extends ConsumerWidget {
                       Text(countLabel(cart.itemCount, 'item'),
                           style: TextStyle(
                               fontWeight: FontWeight.w400,
-                              fontSize: 12, color: AppTheme.textSecondary)),
+                              fontSize: 12, color: context.colors.textSecondary)),
                       Text(money.format(cart.totalMinor),
                           style: TextStyle(
                               fontSize: 22, fontWeight: FontWeight.w800,
-                              color: AppTheme.textPrimary)),
+                              color: context.colors.textPrimary)),
                     ],
                   ),
                   Row(
@@ -387,8 +387,8 @@ class _CartPanel extends ConsumerWidget {
                       // Clear cart
                       IconButton(
                         onPressed: () => cart.clear(),
-                        icon: const Icon(Icons.delete_sweep_outlined,
-                            color: AppTheme.error),
+                        icon: Icon(Icons.delete_sweep_outlined,
+                            color: context.colors.error),
                       ),
                       const SizedBox(width: 8),
                       // Checkout
@@ -405,7 +405,7 @@ class _CartPanel extends ConsumerWidget {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
                                           content: Text('Sale not recorded: $e'),
-                                          backgroundColor: AppTheme.error,
+                                          backgroundColor: context.colors.error,
                                         ),
                                       );
                                     }
@@ -416,7 +416,7 @@ class _CartPanel extends ConsumerWidget {
                                       SnackBar(
                                         content: Text('Sale recorded!',
                                             style: TextStyle(fontWeight: FontWeight.w400)),
-                                        backgroundColor: AppTheme.success,
+                                        backgroundColor: context.colors.success,
                                         behavior: SnackBarBehavior.floating,
                                         shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(10)),

@@ -1,5 +1,6 @@
 import 'package:busybuddy/core/models/models.dart';
 import 'package:busybuddy/core/providers/core_providers.dart';
+import 'package:busybuddy/core/theme/app_theme.dart';
 import 'package:busybuddy/core/utils/plural.dart';
 import 'package:busybuddy/features/inventory/providers/inventory_providers.dart';
 import 'package:busybuddy/features/inventory/screens/product_list_screen.dart';
@@ -43,7 +44,7 @@ void main() {
           inventorySearchProvider.overrideWith((ref) => search),
           inventoryCategoryFilterProvider.overrideWith((ref) => category),
         ],
-        child: const MaterialApp(home: ProductListScreen()),
+        child: MaterialApp(theme: AppTheme.lightTheme, home: const ProductListScreen()),
       ));
       await tester.pumpAndSettle();
     }
@@ -85,7 +86,7 @@ void main() {
           posProductListProvider.overrideWith((ref) async => <Product>[]),
           todayTotalProvider.overrideWith((ref) async => 0),
         ],
-        child: const MaterialApp(home: PosScreen()),
+        child: MaterialApp(theme: AppTheme.lightTheme, home: const PosScreen()),
       ));
       await tester.pumpAndSettle();
     }
