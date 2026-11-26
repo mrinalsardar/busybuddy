@@ -210,7 +210,7 @@ flutter run -d <device-id> \
   --dart-define=POWERSYNC_URL=http://10.0.2.2:8080
 ```
 
-On a desktop or other target that runs on your computer, use `http://127.0.0.1:54321` and `http://127.0.0.1:8080`.
+On a target that runs on your computer, use `http://127.0.0.1:54321` and `http://127.0.0.1:8080`.
 
 **5. Read the sign-in code.** The local stack sends emails to Mailpit (the container is still named `supabase_inbucket_busybuddy`). Open http://127.0.0.1:54324 and read the 6-digit code, or use its API:
 
