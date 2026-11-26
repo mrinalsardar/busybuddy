@@ -73,7 +73,7 @@ flutter run -d <device-id> \
   --dart-define=POWERSYNC_URL=<url>
 ```
 
-Android is the supported development platform. The repository also contains `ios/`, `linux/`, `macos/`, `web/` and `windows/` project folders from the Flutter template, which have not been verified.
+Android is the supported development platform. The repository also contains an `ios/` project folder from the Flutter template, which has not been verified.
 
 When the app runs on an Android emulator, `127.0.0.1` is the emulator itself. Reach a service on your computer, such as the local Supabase stack, at `10.0.2.2` instead (see [Run the backend locally](#run-the-backend-locally)).
 
@@ -210,7 +210,7 @@ flutter run -d <device-id> \
   --dart-define=POWERSYNC_URL=http://10.0.2.2:8080
 ```
 
-On a desktop or other target that runs on your computer, use `http://127.0.0.1:54321` and `http://127.0.0.1:8080`.
+On a target that runs on your computer, use `http://127.0.0.1:54321` and `http://127.0.0.1:8080`.
 
 **5. Read the sign-in code.** The local stack sends emails to Mailpit (the container is still named `supabase_inbucket_busybuddy`). Open http://127.0.0.1:54324 and read the 6-digit code, or use its API:
 
@@ -246,7 +246,7 @@ lib/
 test/              unit and database tests
 supabase/          migrations, pgTAP tests, email templates, config and server docs
 powersync/         PowerSync sync rules and the local service config
-android/ ios/ linux/ macos/ web/ windows/   Flutter platform projects
+android/ ios/      Flutter platform projects
 ```
 
 ## Contributing
