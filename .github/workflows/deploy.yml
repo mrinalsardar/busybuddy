@@ -12,8 +12,9 @@ on:
 permissions:
   contents: read
 
-# One deploy at a time, so an older commit cannot overtake a newer one. A run
-# that waits for approval holds the queue: approve or reject it.
+# One deploy at a time. This does not stop a re-run of an older run, which
+# deploys its older commit again: see docs/hosted-setup.md. A run that waits for
+# approval holds the queue: approve or reject it.
 concurrency:
   group: deploy-backend
   cancel-in-progress: false

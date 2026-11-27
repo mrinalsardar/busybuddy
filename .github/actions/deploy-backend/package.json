@@ -1,0 +1,7 @@
+{
+  "name": "deploy-backend",
+  "private": true,
+  "dependencies": {
+    "powersync": "0.10.4"
+  }
+}

@@ -63,10 +63,12 @@ runs:
       with:
         node-version: 24
 
-    # No secrets here, and no package install scripts run.
+    # No secrets here, and no package install scripts run. package-lock.json
+    # pins the CLI and all its dependencies.
     - name: Install the PowerSync CLI
       shell: bash
-      run: npm install --global --ignore-scripts --no-audit --no-fund powersync@0.10.4
+      working-directory: ${{ github.action_path }}
+      run: npm ci --ignore-scripts --no-audit --no-fund
 
     # `db push` targets the local database unless --remote is given.
     - name: Apply migrations
@@ -84,4 +86,4 @@ runs:
       env:
         PS_ADMIN_TOKEN: ${{ inputs.powersync-admin-token }}
         INSTANCE_ID: ${{ inputs.powersync-instance-id }}
-      run: powersync deploy sync-config --directory=powersync --sync-config-file-path=powersync/sync-rules.yaml
+      run: '"$GITHUB_ACTION_PATH/node_modules/.bin/powersync" deploy sync-config --directory=powersync --sync-config-file-path=powersync/sync-rules.yaml'

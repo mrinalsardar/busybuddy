@@ -91,6 +91,8 @@ To run it, open **Actions, Deploy backend, Run workflow** and choose `main`. It 
 
 One run deploys at a time. A run that waits for approval holds back later runs, so approve or reject it. Before you approve, check that `qa` works with the deployed commit.
 
+**Never re-run a run, or any of its jobs, once a newer run has started deploying.** A re-run deploys the old run's commit, and can replace newer sync rules in `qa` or `prd` with older ones. The workflow does not block this. Start a new run from `main` instead.
+
 **On the first run, the sync rules step is expected to fail**, because PowerSync is not connected yet. The migrations are applied before it. Do steps 5 and 6 for `qa`, then run the workflow again. When it reaches `prd` for the first time, approve it, let the sync rules step fail in the same way, do steps 5 and 6 for `prd`, then re-run the failed job and approve it again.
 
 ## 5. Create the PowerSync database role
@@ -158,6 +160,26 @@ A device that has the app from before the flavors keeps it as the `prd` app, whi
 2. Set a signing team for each bundle ID.
 3. Run `flutter build ios --flavor qa --no-codesign --dart-define-from-file=env/qa.json`, then check the app name and bundle ID.
 4. If Flutter creates a `Podfile`, map all the build configurations to `:debug` or `:release` in its `project 'Runner'` block.
+
+## Update the PowerSync CLI
+
+The workflow installs the CLI with `npm ci` from [`package.json`](../.github/actions/deploy-backend/package.json) and its [lockfile](../.github/actions/deploy-backend/package-lock.json), so `qa` and `prd` get the same dependency versions from the same commit. To change the CLI version, or to pick up newer dependencies, update the files and commit them.
+
+For a new CLI version, replace `<version>` with an exact version:
+
+```
+cd .github/actions/deploy-backend
+npm install --package-lock-only --ignore-scripts --save-exact powersync@<version>
+```
+
+To pick up newer dependencies of the same CLI version:
+
+```
+cd .github/actions/deploy-backend
+npm update --package-lock-only --ignore-scripts
+```
+
+Review the changes before you commit them: this code runs with `PS_ADMIN_TOKEN`.
 
 ## Free-tier limits
 
