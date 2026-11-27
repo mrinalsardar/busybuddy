@@ -25,6 +25,26 @@ android {
         versionName = flutter.versionName
     }
 
+    // One flavor per backend environment (env/<env>.json). The suffixes let the
+    // three apps be installed side by side. `appName` is the launcher label.
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            manifestPlaceholders["appName"] = "BusyBuddy Dev"
+        }
+        create("qa") {
+            dimension = "environment"
+            applicationIdSuffix = ".qa"
+            manifestPlaceholders["appName"] = "BusyBuddy QA"
+        }
+        create("prd") {
+            dimension = "environment"
+            manifestPlaceholders["appName"] = "BusyBuddy"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

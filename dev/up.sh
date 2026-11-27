@@ -8,5 +8,6 @@ bb_compose up -d --wait --remove-orphans
 "$BB_DEV_DIR/seed.sh"
 echo
 echo "Backend is up. Mail inbox: $BB_MAIL_URL"
-echo "Run the app:   flutter run -d <device-id> \$(dev/defines.sh emulator)"
+echo "Run the app:   dev/defines.sh emulator > env/dev.json"
+echo "               flutter run -d <device-id> --flavor dev --dart-define-from-file=env/dev.json"
 echo "Sign-in code:  dev/code.sh owner@busybuddy.test"

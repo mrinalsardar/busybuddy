@@ -14,9 +14,9 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_mode_provider.dart';
 import 'core/router/app_router.dart';
 
-// Backend config, passed with --dart-define (never commit real values):
-//   flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=... \
-//     --dart-define=POWERSYNC_URL=...
+// Backend config, passed at build time from a gitignored env/<env>.json (public
+// values only; see env/example.json):
+//   flutter run --flavor qa --dart-define-from-file=env/qa.json
 // Without them the app runs on the local database only.
 const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');

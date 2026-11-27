@@ -2,7 +2,7 @@
     <!-- Syncs the local database with Supabase through PowerSync. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="busybuddy"
+        android:label="${appName}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
