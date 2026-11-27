@@ -6,9 +6,9 @@ How to set up the hosted backends, deploy to them and build the app against them
 
 | Env | Backend | Build values | Android application ID | App name |
 |---|---|---|---|---|
-| `dev` | local Docker stack (`dev/up.sh`) | `env/dev.json` | `com.example.busybuddy.dev` | BusyBuddy Dev |
-| `qa` | one free Supabase project and one free PowerSync instance | `env/qa.json` | `com.example.busybuddy.qa` | BusyBuddy QA |
-| `prd` | one free Supabase project and one free PowerSync instance | `env/prd.json` | `com.example.busybuddy` | BusyBuddy |
+| `dev` | local Docker stack (`dev/up.sh`) | `env/dev.json` | `io.github.mrinalsardar.busybuddy.dev` | BusyBuddy Dev |
+| `qa` | one free Supabase project and one free PowerSync instance | `env/qa.json` | `io.github.mrinalsardar.busybuddy.qa` | BusyBuddy QA |
+| `prd` | one free Supabase project and one free PowerSync instance | `env/prd.json` | `io.github.mrinalsardar.busybuddy` | BusyBuddy |
 
 There is no hosted `stage`. For `dev`, see [Run the backend locally](../README.md#run-the-backend-locally). The rest of this page applies to `qa` and `prd`. Do every step once for each, and never share a password, key or database role between them. Do not copy `prd` data to `qa`.
 
@@ -150,7 +150,7 @@ Without `--flavor`, Flutter builds `dev` (`default-flavor` in `pubspec.yaml`). I
 
 Release builds are still signed with the debug keys (`android/app/build.gradle.kts`), so they are not ready for a store.
 
-A device that has the app from before the flavors keeps it as the `prd` app, which has the same application ID. `dev` and `qa` install next to it as separate apps with their own local data. A new build installs over the old `prd` app only if it is signed with the same key, and each computer has its own debug key. If Android refuses the update, do not uninstall an app that holds data you have not synced: uninstalling deletes it.
+The application ID used to be `com.example.busybuddy` (with the `.dev` and `.qa` suffixes for those flavors). Android treats the new ID as a different app: on a device that has an old app, every flavor installs next to it as a separate app, and the old app's local data does not move to the new one. Do not uninstall an old app that holds data you have not synced: uninstalling deletes it. A new build installs over an app with the same application ID only if it is signed with the same key, and each computer has its own debug key. If Android refuses the update, the same warning about uninstalling applies.
 
 ### iOS
 
