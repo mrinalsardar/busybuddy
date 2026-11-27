@@ -61,9 +61,9 @@ Android has one flavor per environment. They install side by side.
 
 | Flavor | Application ID | App name |
 |---|---|---|
-| `dev` (default) | `com.example.busybuddy.dev` | BusyBuddy Dev |
-| `qa` | `com.example.busybuddy.qa` | BusyBuddy QA |
-| `prd` | `com.example.busybuddy` | BusyBuddy |
+| `dev` (default) | `io.github.mrinalsardar.busybuddy.dev` | BusyBuddy Dev |
+| `qa` | `io.github.mrinalsardar.busybuddy.qa` | BusyBuddy QA |
+| `prd` | `io.github.mrinalsardar.busybuddy` | BusyBuddy |
 
 On Android, `dev` has an orange `DEV` launcher icon and `qa` a purple `QA` one (`android/app/src/<flavor>/res`). `prd` uses the icon in `android/app/src/main/res`.
 
