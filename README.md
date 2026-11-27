@@ -29,7 +29,7 @@ Money is stored as integer minor units, so amounts never use floating point.
 - **Android SDK** with an emulator image and `adb`. The Android build uses Gradle 9.6.0 (downloaded by the Gradle wrapper), Android Gradle Plugin 9.5.2 and Kotlin 2.4.21. Run `flutter doctor` to check your toolchain.
 - **For the local backend and the containerised tests:** Docker with Compose v2 (`docker compose`). No other install is needed for those; see [Run the backend locally](#run-the-backend-locally). The [Supabase CLI](https://supabase.com/docs/guides/local-development) is only needed for `supabase test db` and the [CLI alternative](#alternative-the-supabase-cli).
 
-You do not need a Supabase or PowerSync account to run the app. The maintainer has no hosted accounts yet.
+You do not need a Supabase or PowerSync account to run the app.
 
 ## Setup
 
@@ -43,7 +43,7 @@ Code generation with `build_runner` is not needed. `riverpod_generator`, `json_s
 
 ### Backend configuration
 
-The app reads three values at build time, passed with `--dart-define`:
+The app reads three values at build time:
 
 | Name | Meaning |
 |---|---|
@@ -51,7 +51,21 @@ The app reads three values at build time, passed with `--dart-define`:
 | `SUPABASE_ANON_KEY` | Supabase anon (publishable) key |
 | `POWERSYNC_URL` | URL of the PowerSync instance |
 
-If any of the three is missing, the app starts without a backend. There is then no sign-in and no sync, and the app only shows and stores data on the device. Sign-in and sync need a Supabase project and a PowerSync instance. To run both on your computer, follow [Run the backend locally](#run-the-backend-locally). For a hosted project, see [`supabase/README.md`](supabase/README.md). Do not commit real values.
+Put them in a file per environment, `env/<env>.json` (`dev`, `qa`, `prd`), in the format of [`env/example.json`](env/example.json), and pass it with `--dart-define-from-file`. Git ignores these files. Only these public values belong in them.
+
+If any of the three is missing, the app starts without a backend. There is then no sign-in and no sync, and the app only shows and stores data on the device. Sign-in and sync need a Supabase project and a PowerSync instance. To run both on your computer, follow [Run the backend locally](#run-the-backend-locally). For the hosted `qa` and `prd` backends, see the [hosted setup guide](docs/hosted-setup.md). Do not commit real values.
+
+### Flavors
+
+Android has one flavor per environment. They install side by side.
+
+| Flavor | Application ID | App name |
+|---|---|---|
+| `dev` (default) | `com.example.busybuddy.dev` | BusyBuddy Dev |
+| `qa` | `com.example.busybuddy.qa` | BusyBuddy QA |
+| `prd` | `com.example.busybuddy` | BusyBuddy |
+
+Without `--flavor`, Flutter uses `dev`. The [hosted setup guide](docs/hosted-setup.md#8-build-each-flavor) shows how to build each flavor.
 
 ## Running
 
@@ -64,16 +78,13 @@ flutter devices                           # find the device id, e.g. emulator-55
 flutter run -d <device-id>
 ```
 
-This runs the app on the local database only. To run it against a backend, add the values:
+This runs the `dev` flavor on the local database only. To run it against a backend, pick a flavor and pass its file:
 
 ```
-flutter run -d <device-id> \
-  --dart-define=SUPABASE_URL=<url> \
-  --dart-define=SUPABASE_ANON_KEY=<key> \
-  --dart-define=POWERSYNC_URL=<url>
+flutter run -d <device-id> --flavor <env> --dart-define-from-file=env/<env>.json
 ```
 
-Android is the supported development platform. The repository also contains an `ios/` project folder from the Flutter template, which has not been verified.
+Android is the supported development platform. The repository also contains an `ios/` project folder from the Flutter template, with matching flavor schemes. Neither has been verified (see [iOS](docs/hosted-setup.md#ios)).
 
 When the app runs on an Android emulator, `127.0.0.1` is the emulator itself. Reach a service on your computer, such as the local Supabase stack, at `10.0.2.2` instead (see [Run the backend locally](#run-the-backend-locally)).
 
@@ -98,7 +109,7 @@ The server side lives in `supabase/` and `powersync/`. [`supabase/README.md`](su
 | Command | What it does |
 |---|---|
 | `dev/up.sh` | Starts the stack, waits until it is healthy and creates the seed accounts. Safe to run again. |
-| `dev/defines.sh emulator` | Prints the `--dart-define` flags for an Android emulator (`desktop` for an app that runs on your computer). |
+| `dev/defines.sh emulator` | Prints the contents of `env/dev.json` for an Android emulator (`desktop` for an app that runs on your computer). |
 | `dev/code.sh <email>` | Prints the newest sign-in code mailed to that address. |
 | `dev/test.sh` | Runs `flutter pub get`, `flutter analyze` and `flutter test` in the pinned toolchain image. |
 | `dev/down.sh` | Stops the stack and keeps its data. `dev/down.sh --reset` also deletes the data. |
@@ -108,7 +119,8 @@ The server side lives in `supabase/` and `powersync/`. [`supabase/README.md`](su
 ```
 dev/up.sh
 flutter emulators --launch <emulator-id>
-flutter run -d <device-id> $(dev/defines.sh emulator)
+dev/defines.sh emulator > env/dev.json
+flutter run -d <device-id> --flavor dev --dart-define-from-file=env/dev.json
 ```
 
 The first `dev/up.sh` pulls the images, which takes a few minutes. It starts the services in this order: Postgres, Auth, Storage, a one-shot `setup` job, then PowerSync. `setup` applies `supabase/migrations/` once Auth has created its schema, creates the `powersync_role` database role and the `powersync_storage` database, and exits. PowerSync reads the committed [`powersync/config.local.yaml`](powersync/config.local.yaml) and [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml) unchanged: the Compose services use the container names that config expects. All ports are published on `127.0.0.1` only:
@@ -120,7 +132,7 @@ The first `dev/up.sh` pulls the images, which takes a few minutes. It starts the
 | Mailpit inbox | http://127.0.0.1:54324 |
 | PowerSync | http://127.0.0.1:8080 |
 
-These are the ports of `supabase start`, so run only one of the two stacks at a time. An Android emulator reaches your computer at `10.0.2.2`, which `dev/defines.sh emulator` uses. A physical device cannot reach `127.0.0.1` on your computer: publish the ports on your LAN address in `dev/compose.yaml` and replace the host in the `dev/defines.sh` output.
+These are the ports of `supabase start`, so run only one of the two stacks at a time. An Android emulator reaches your computer at `10.0.2.2`, which `dev/defines.sh emulator` uses. A physical device cannot reach `127.0.0.1` on your computer: publish the ports on your LAN address in `dev/compose.yaml` and replace the host in `env/dev.json`.
 
 **Accounts and sign-in codes.** `dev/up.sh` creates three confirmed accounts: `owner@busybuddy.test`, `staff@busybuddy.test` and `other@busybuddy.test`. They have no password and no shop. Sign in with an emailed code: enter the address in the app, then run `dev/code.sh owner@busybuddy.test` and type the 6-digit code it prints. Any other address also works, because sign-up is on. The Mailpit inbox at http://127.0.0.1:54324 shows every mail.
 
@@ -201,13 +213,18 @@ On Windows, replace `$PWD/powersync` with the Windows path of the `powersync` fo
 
 Check `docker logs bb_powersync`. It should show `Replicating "public"."<table>"` for each publication table and then `Activated new replication stream`. A warning about `bucket_definitions` being deprecated is expected. If the image pull fails with `unexpected EOF`, run `docker pull journeyapps/powersync-service:latest` again.
 
-**4. Run the app against the stack.** Pass the three values with `--dart-define`. `SUPABASE_ANON_KEY` takes the **Publishable** key from step 1. An Android emulator cannot reach your computer at `127.0.0.1`, so use `10.0.2.2` there. A physical device needs your computer's LAN address instead.
+**4. Run the app against the stack.** Create `env/dev.json` from `env/example.json` with the three values. `SUPABASE_ANON_KEY` takes the **Publishable** key from step 1. An Android emulator cannot reach your computer at `127.0.0.1`, so use `10.0.2.2` there. A physical device needs your computer's LAN address instead.
+
+```json
+{
+  "SUPABASE_URL": "http://10.0.2.2:54321",
+  "SUPABASE_ANON_KEY": "<publishable-key>",
+  "POWERSYNC_URL": "http://10.0.2.2:8080"
+}
+```
 
 ```
-flutter run -d <device-id> \
-  --dart-define=SUPABASE_URL=http://10.0.2.2:54321 \
-  --dart-define=SUPABASE_ANON_KEY=<publishable-key> \
-  --dart-define=POWERSYNC_URL=http://10.0.2.2:8080
+flutter run -d <device-id> --flavor dev --dart-define-from-file=env/dev.json
 ```
 
 On a target that runs on your computer, use `http://127.0.0.1:54321` and `http://127.0.0.1:8080`.
@@ -232,7 +249,11 @@ After `supabase db reset` or `supabase stop --no-backup`, repeat steps 2 and 3 (
 
 **Testing a forced sign-out.** `jwt_expiry` in `supabase/config.toml` is 3600 seconds, so a revoked session shows up in the app only after up to an hour. For a test, change it to `jwt_expiry = 60` before step 1 and do not commit that change. Then `delete from auth.sessions` (through `docker exec supabase_db_busybuddy psql -U postgres -c "delete from auth.sessions"`) signs the app out within about a minute.
 
-The server side is described in [`supabase/README.md`](supabase/README.md): schema, access rules, server functions, the upload contract and the sync rules. The sync rules are in [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml), with one bucket per shop. The CLI prints that all local services bind to `0.0.0.0` and use shared default keys and passwords, so run this stack only on a network you trust. For a hosted PowerSync instance, create your own config: `config.local.yaml` is for the local stack only.
+The server side is described in [`supabase/README.md`](supabase/README.md): schema, access rules, server functions, the upload contract and the sync rules. The sync rules are in [`powersync/sync-rules.yaml`](powersync/sync-rules.yaml), with one bucket per shop. The CLI prints that all local services bind to `0.0.0.0` and use shared default keys and passwords, so run this stack only on a network you trust. For a hosted PowerSync instance, follow the [hosted setup guide](docs/hosted-setup.md): `config.local.yaml` is for the local stack only.
+
+### Deploy to qa and prd
+
+The **Deploy backend** GitHub Actions workflow (`.github/workflows/deploy.yml`) is started by hand from `main`. It runs the database tests, deploys the migrations and sync rules to `qa`, and deploys them to `prd` after a reviewer approves. See the [hosted setup guide](docs/hosted-setup.md#4-run-the-first-deploy) for the setup it needs.
 
 ## Project layout
 
@@ -245,6 +266,8 @@ lib/
                    sales, settings
 test/              unit and database tests
 supabase/          migrations, pgTAP tests, email templates, config and server docs
+env/               example.json; your env/<env>.json build values (ignored by Git)
+docs/              hosted setup guide
 powersync/         PowerSync sync rules and the local service config
 android/ ios/      Flutter platform projects
 ```

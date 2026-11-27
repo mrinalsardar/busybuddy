@@ -38,6 +38,9 @@ Each test file runs in a transaction that it rolls back. The tests insert their
 own `auth.users` rows. They act as a user with
 `set local role authenticated` plus `set local request.jwt.claims = '{"sub":"<uuid>"}'`.
 
+For the hosted `qa` and `prd` backends, follow the
+[hosted setup guide](../docs/hosted-setup.md).
+
 ## Auth
 
 The app signs in with an emailed one-time code (`signInWithOtp` and

@@ -51,6 +51,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # The flavor when --flavor is not given, so a plain `flutter run` is never prd.
+  default-flavor: dev
+
   assets:
     - assets/fonts/OFL.txt
 

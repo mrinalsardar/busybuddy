@@ -1,0 +1,87 @@
+name: Deploy backend
+description: Apply supabase/migrations, then deploy powersync/sync-rules.yaml, to one hosted environment.
+
+# Used by .github/workflows/deploy.yml. A composite action cannot read the
+# secrets context, so the calling job passes the values of its GitHub
+# Environment. Each secret is given only to the steps that need it.
+inputs:
+  target:
+    description: The environment being deployed, qa or prd.
+    required: true
+  deploy-environment:
+    description: The environment's DEPLOY_ENVIRONMENT variable. Must equal target.
+    required: true
+  supabase-access-token:
+    required: true
+  supabase-db-password:
+    required: true
+  supabase-project-ref:
+    required: true
+  powersync-admin-token:
+    required: true
+  powersync-instance-id:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # First, before anything is installed or contacted. A GitHub Environment that
+    # was never set up has none of these values.
+    - name: Check that the environment is configured
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        DEPLOY_ENVIRONMENT: ${{ inputs.deploy-environment }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
+        SUPABASE_PROJECT_REF: ${{ inputs.supabase-project-ref }}
+        PS_ADMIN_TOKEN: ${{ inputs.powersync-admin-token }}
+        POWERSYNC_INSTANCE_ID: ${{ inputs.powersync-instance-id }}
+      run: |
+        missing=0
+        for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD PS_ADMIN_TOKEN SUPABASE_PROJECT_REF POWERSYNC_INSTANCE_ID; do
+          if [ -z "${!name}" ]; then
+            echo "::error::$name is not set in the GitHub Environment '$TARGET'."
+            missing=1
+          fi
+        done
+        if [ "$DEPLOY_ENVIRONMENT" != "$TARGET" ]; then
+          echo "::error::The variable DEPLOY_ENVIRONMENT of the GitHub Environment '$TARGET' must be '$TARGET'."
+          missing=1
+        fi
+        if [ "$missing" != 0 ]; then
+          echo "Nothing was deployed. See docs/hosted-setup.md."
+          exit 1
+        fi
+
+    # Pinned, like ci.yml. Bump deliberately.
+    - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3
+      with:
+        version: 3.2.0
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+      with:
+        node-version: 24
+
+    # No secrets here, and no package install scripts run.
+    - name: Install the PowerSync CLI
+      shell: bash
+      run: npm install --global --ignore-scripts --no-audit --no-fund powersync@0.10.4
+
+    # `db push` targets the local database unless --remote is given.
+    - name: Apply migrations
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
+        SUPABASE_PROJECT_REF: ${{ inputs.supabase-project-ref }}
+      run: |
+        supabase link --project-ref "$SUPABASE_PROJECT_REF"
+        supabase db push --remote --yes
+
+    - name: Deploy sync rules
+      shell: bash
+      env:
+        PS_ADMIN_TOKEN: ${{ inputs.powersync-admin-token }}
+        INSTANCE_ID: ${{ inputs.powersync-instance-id }}
+      run: powersync deploy sync-config --directory=powersync --sync-config-file-path=powersync/sync-rules.yaml

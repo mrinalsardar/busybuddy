@@ -62,6 +62,10 @@ key.properties
 google-services.json
 GoogleService-Info.plist
 
+# Per-environment build values (--dart-define-from-file); only the example is committed
+/env/*.json
+!/env/example.json
+
 # Local SQLite databases
 *.db
 *.db-journal
