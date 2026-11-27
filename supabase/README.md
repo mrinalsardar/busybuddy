@@ -55,6 +55,10 @@ connector) or `join_shop` with an invite code from `create_invite`.
 
 ## PowerSync
 
+For hosted `qa` and `prd`, use the SQL and connection steps in the
+[hosted setup guide](../docs/hosted-setup.md#5-create-the-powersync-database-role)
+instead of the three steps below.
+
 1. Create a database role for PowerSync. The migration does not create it,
    because the role needs a password. Run the two statements separately: a
    multi-statement `psql -c` is one transaction, and creating a database
