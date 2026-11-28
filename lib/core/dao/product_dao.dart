@@ -232,7 +232,10 @@ class ProductDao extends BaseDao<Product> {
             reason: current == null ? StockMovementReason.initial : StockMovementReason.correction);
       }
     }
-    await syncVariantStockTotal(tx, product.id);
+    // With no variants left, the product's stock is not a variant total:
+    // deleteVariantRow already zeroed it if the last one was removed here, and
+    // a product that had none keeps its own.
+    if (variants.isNotEmpty) await syncVariantStockTotal(tx, product.id);
   }
 
   /// Throws [DuplicateCodeException] if [product]'s SKU or barcode is used by
