@@ -48,6 +48,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   // Variant management
   final List<_VariantEntry> _variants = [];
+  /// Ids of every stored variant the form has shown, so one the user removed
+  /// is not added back by a later change.
+  final Set<String> _storedVariantIds = {};
 
   bool get _showVariants =>
       ref.read(activeProfileProvider).value?.variantSupport ?? false;
@@ -70,7 +73,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Future<void> _loadProduct() async {
     final dao = ref.read(productDaoProvider);
     final p = await dao.getById(widget.productId!);
-    if (p == null) return;
+    if (p == null || !mounted) return;
     _existing = p;
     _nameCtrl.text = p.name;
     _skuCtrl.text = p.sku ?? '';
@@ -86,16 +89,88 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final variantDao = ref.read(productVariantDaoProvider);
       final variants = await variantDao.getByProduct(p.id);
       for (final v in variants) {
-        _variants.add(_VariantEntry(
-          id: v.id,
-          sizeCtrl: TextEditingController(text: v.size ?? ''),
-          colorCtrl: TextEditingController(text: v.color ?? ''),
-          stockCtrl: TextEditingController(text: v.stockQty.toString()),
-          originalStock: v.stockQty,
-        ));
+        _variants.add(_VariantEntry.stored(v));
+        _storedVariantIds.add(v.id);
       }
     }
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _followStored(p.id);
+  }
+
+  /// Keeps the open form current when the stored product changes, e.g. by a
+  /// sync. Only what the user has not edited changes; otherwise saving would
+  /// write the old values back over the new ones.
+  void _followStored(String id) {
+    ref.listenManual(productByIdProvider(id), (_, next) {
+      final p = next.value;
+      if (!next.isLoading && p != null) setState(() => _mergeProduct(p));
+    }, fireImmediately: true);
+    if (!_showVariants) return;
+    ref.listenManual(variantsProvider(id), (_, next) {
+      final variants = next.value;
+      if (next.isLoading || variants == null) return;
+      var droppedEdit = false;
+      setState(() => droppedEdit = _mergeVariants(variants));
+      if (droppedEdit) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('A variant you edited was deleted elsewhere and removed')));
+      }
+    }, fireImmediately: true);
+  }
+
+  void _mergeProduct(Product p) {
+    final before = _existing!;
+    _follow(_nameCtrl, before.name, p.name);
+    _follow(_skuCtrl, before.sku ?? '', p.sku ?? '');
+    _follow(_barcodeCtrl, before.barcode ?? '', p.barcode ?? '');
+    _follow(_priceCtrl, _money.toInput(before.priceMinor), _money.toInput(p.priceMinor));
+    _follow(_costCtrl, _money.toInput(before.costPriceMinor), _money.toInput(p.costPriceMinor));
+    _follow(_categoryCtrl, before.category ?? '', p.category ?? '');
+    _follow(_stockCtrl, '${before.stockQty}', '${p.stockQty}');
+    _follow(_lowStockCtrl, '${before.lowStockThreshold}', '${p.lowStockThreshold}');
+    if (_expiryDate == before.expiryDate) _expiryDate = p.expiryDate;
+    _existing = p;
+  }
+
+  /// Returns true if it removed a row the user had edited.
+  bool _mergeVariants(List<ProductVariant> variants) {
+    var droppedEdit = false;
+    final stored = {for (final v in variants) v.id: v};
+    for (final entry in [..._variants]) {
+      final before = entry.original;
+      if (before == null) continue; // Added in this form.
+      final v = stored[entry.id];
+      if (v != null) {
+        _follow(entry.sizeCtrl, before.size ?? '', v.size ?? '');
+        _follow(entry.colorCtrl, before.color ?? '', v.color ?? '');
+        _follow(entry.stockCtrl, '${before.stockQty}', '${v.stockQty}');
+        entry.original = v;
+      } else {
+        // Deleted elsewhere, so it can be shown again if it comes back.
+        if (!entry.matches(before)) droppedEdit = true;
+        _storedVariantIds.remove(entry.id);
+        _removeVariant(entry);
+      }
+    }
+    for (final v in variants) {
+      // This form's own save stores its new rows, which are already shown.
+      if (_storedVariantIds.add(v.id) && !_variants.any((e) => e.id == v.id)) {
+        _variants.add(_VariantEntry.stored(v));
+      }
+    }
+    return droppedEdit;
+  }
+
+  /// Takes a new stored value into a field that still shows the old one.
+  static void _follow(TextEditingController ctrl, String before, String after) {
+    if (before != after && ctrl.text == before) ctrl.text = after;
+  }
+
+  void _removeVariant(_VariantEntry entry) {
+    _variants.remove(entry);
+    // Dispose once the row's fields are gone.
+    WidgetsBinding.instance.addPostFrameCallback((_) => entry.dispose());
   }
 
   @override
@@ -109,9 +184,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _stockCtrl.dispose();
     _lowStockCtrl.dispose();
     for (final v in _variants) {
-      v.sizeCtrl.dispose();
-      v.colorCtrl.dispose();
-      v.stockCtrl.dispose();
+      v.dispose();
     }
     super.dispose();
   }
@@ -125,11 +198,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final id = _existing?.id ?? const Uuid().v4();
     final now = DateTime.now();
 
-    final oldImagePath = _existing?.imagePath;
-    var imagePath = _removeImage ? null : oldImagePath;
+    String? newImagePath;
     if (_newImage != null) {
       try {
-        imagePath = await ref.read(productImageStoreProvider).save(profile.id, id, _newImage!);
+        newImagePath = await ref.read(productImageStoreProvider).save(profile.id, id, _newImage!);
       } catch (e) {
         if (!mounted) return;
         setState(() => _saving = false);
@@ -137,6 +209,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         return;
       }
     }
+
+    // Read after the await: a sync can change the stored product during it.
+    final oldImagePath = _existing?.imagePath;
+    final imagePath = newImagePath ?? (_removeImage ? null : oldImagePath);
 
     final product = Product(
       id: id,
@@ -175,7 +251,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       await dao.saveWithVariants(product, isNew: !_isEdit, variants: variants);
     } catch (e) {
       // Not saved: the new picture file is not wanted.
-      if (_newImage != null) await _store.deleteLocal(imagePath!);
+      if (newImagePath != null) await _store.deleteLocal(newImagePath);
       if (!mounted) return;
       setState(() => _saving = false);
       _showError(e is DuplicateCodeException ? e.message : 'Could not save product: $e');
@@ -461,9 +537,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                ..._variants.asMap().entries.map((entry) {
-                  final i = entry.key;
-                  final v = entry.value;
+                ..._variants.map((v) {
                   return Padding(
                     key: ValueKey(v.id),
                     padding: const EdgeInsets.only(bottom: 12),
@@ -505,7 +579,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                                 child: TextFormField(
                                   controller: v.stockCtrl,
                                   keyboardType: TextInputType.number,
-                                  validator: _stockValidator(v.originalStock),
+                                  validator: _stockValidator(v.original?.stockQty),
                                   decoration: const InputDecoration(
                                     hintText: 'Qty',
                                     isDense: true,
@@ -516,15 +590,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                               IconButton(
                                 icon: Icon(Icons.remove_circle_outline,
                                     color: context.colors.error, size: 20),
-                                onPressed: () {
-                                  setState(() => _variants.removeAt(i));
-                                  // Dispose once the row's fields are gone.
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    v.sizeCtrl.dispose();
-                                    v.colorCtrl.dispose();
-                                    v.stockCtrl.dispose();
-                                  });
-                                },
+                                onPressed: () => setState(() => _removeVariant(v)),
                               ),
                             ],
                           ),
@@ -613,14 +679,34 @@ class _VariantEntry {
   final TextEditingController sizeCtrl;
   final TextEditingController colorCtrl;
   final TextEditingController stockCtrl;
-  /// Stock as loaded from the DB; null for a new row.
-  final int? originalStock;
+  /// The stored variant the row shows; null for a new row.
+  ProductVariant? original;
 
   _VariantEntry({
     required this.id,
     required this.sizeCtrl,
     required this.colorCtrl,
     required this.stockCtrl,
-    this.originalStock,
+    this.original,
   });
+
+  factory _VariantEntry.stored(ProductVariant v) => _VariantEntry(
+        id: v.id,
+        sizeCtrl: TextEditingController(text: v.size ?? ''),
+        colorCtrl: TextEditingController(text: v.color ?? ''),
+        stockCtrl: TextEditingController(text: v.stockQty.toString()),
+        original: v,
+      );
+
+  /// True while every field still shows [v].
+  bool matches(ProductVariant v) =>
+      sizeCtrl.text == (v.size ?? '') &&
+      colorCtrl.text == (v.color ?? '') &&
+      stockCtrl.text == '${v.stockQty}';
+
+  void dispose() {
+    sizeCtrl.dispose();
+    colorCtrl.dispose();
+    stockCtrl.dispose();
+  }
 }

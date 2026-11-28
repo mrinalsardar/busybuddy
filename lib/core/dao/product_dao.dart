@@ -74,6 +74,16 @@ class ProductDao extends BaseDao<Product> {
     return query(where: where, whereArgs: args, orderBy: 'name ASC');
   }
 
+  /// Stock on hand by id, for every product and variant of the shop.
+  Future<Map<String, int>> getStockQtys(String profileId) async {
+    final rows = await (await db).getAll(
+      'SELECT id, stock_qty FROM product WHERE profile_id = ? '
+      'UNION ALL SELECT id, stock_qty FROM product_variant WHERE profile_id = ?',
+      [profileId, profileId],
+    );
+    return {for (final r in rows) r['id'] as String: r['stock_qty'] as int};
+  }
+
   Future<List<Product>> getLowStock(String profileId) async {
     return query(
       where: 'profile_id = ? AND archived = 0 AND stock_qty <= low_stock_threshold',

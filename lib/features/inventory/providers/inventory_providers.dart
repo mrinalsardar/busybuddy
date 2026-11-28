@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/models/product.dart';
 import '../../../core/models/product_variant.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/providers/watch_tables.dart';
 
 // ── Search / filter state ──────────────────────────────
 final inventorySearchProvider = StateProvider<String>((_) => '');
@@ -11,15 +12,16 @@ final inventoryCategoryFilterProvider = StateProvider<String?>((_) => null);
 
 // ── Product list ───────────────────────────────────────
 final productListProvider = FutureProvider<List<Product>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).value;
-  if (profile == null) return [];
+  watchTables(ref, {'product'});
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return [];
 
   final search = ref.watch(inventorySearchProvider);
   final category = ref.watch(inventoryCategoryFilterProvider);
   final dao = ref.read(productDaoProvider);
 
   return dao.getByProfile(
-    profile.id,
+    profileId,
     category: category,
     searchQuery: search.isEmpty ? null : search,
   );
@@ -29,19 +31,23 @@ final productListProvider = FutureProvider<List<Product>>((ref) async {
 /// All active products for the POS grid. Unlike [productListProvider] it
 /// ignores the Inventory search and category filters.
 final posProductListProvider = FutureProvider<List<Product>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).value;
-  if (profile == null) return [];
-  return ref.read(productDaoProvider).getByProfile(profile.id);
+  watchTables(ref, {'product'});
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return [];
+  return ref.read(productDaoProvider).getByProfile(profileId);
 });
 
 /// Refreshes every view of product data and stock. Call after any write to
 /// products, variants or sales: `invalidateProductViews(ref.invalidate)`.
+/// The views also follow table changes by themselves (see [watchTables]);
+/// this refreshes them without waiting for the change notification.
 void invalidateProductViews(void Function(ProviderOrFamily) invalidate) {
   invalidate(productListProvider);
   invalidate(posProductListProvider);
   invalidate(categoryListProvider);
   invalidate(productByIdProvider);
   invalidate(variantsProvider);
+  invalidate(stockQtyProvider);
   invalidate(lowStockCountProvider);
   invalidate(avgSellingPriceProvider);
 }
@@ -49,36 +55,50 @@ void invalidateProductViews(void Function(ProviderOrFamily) invalidate) {
 // ── Average selling price ──────────────────────────────
 /// Product id -> average actual selling price (minor units) from past sales.
 final avgSellingPriceProvider = FutureProvider<Map<String, int>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).value;
-  if (profile == null) return {};
-  return ref.read(saleItemDaoProvider).getAvgSellingPricesMinor(profile.id);
+  watchTables(ref, {'sale', 'sale_item'});
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return {};
+  return ref.read(saleItemDaoProvider).getAvgSellingPricesMinor(profileId);
 });
 
 // ── Category list ──────────────────────────────────────
 /// Auto-disposed, so each open of the filter sheet queries again and never
 /// starts from an old list.
 final categoryListProvider = FutureProvider.autoDispose<List<String>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).value;
-  if (profile == null) return [];
-  return ref.read(productDaoProvider).getCategories(profile.id);
+  watchTables(ref, {'product'});
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return [];
+  return ref.read(productDaoProvider).getCategories(profileId);
 });
 
 // ── Single product ─────────────────────────────────────
 final productByIdProvider =
     FutureProvider.family<Product?, String>((ref, id) async {
+  watchTables(ref, {'product'});
   return ref.read(productDaoProvider).getById(id);
 });
 
 // ── Variants for a product ─────────────────────────────
 final variantsProvider =
     FutureProvider.family<List<ProductVariant>, String>((ref, productId) async {
+  watchTables(ref, {'product_variant'});
   return ref.read(productVariantDaoProvider).getByProduct(productId);
+});
+
+// ── Stock on hand ──────────────────────────────────────
+/// Product or variant id -> current stock.
+final stockQtyProvider = FutureProvider<Map<String, int>>((ref) async {
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return {};
+  watchTables(ref, {'product', 'product_variant'});
+  return ref.read(productDaoProvider).getStockQtys(profileId);
 });
 
 // ── Low-stock count ────────────────────────────────────
 final lowStockCountProvider = FutureProvider<int>((ref) async {
-  final profile = ref.watch(activeProfileProvider).value;
-  if (profile == null) return 0;
-  final items = await ref.read(productDaoProvider).getLowStock(profile.id);
+  watchTables(ref, {'product'});
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return 0;
+  final items = await ref.read(productDaoProvider).getLowStock(profileId);
   return items.length;
 });

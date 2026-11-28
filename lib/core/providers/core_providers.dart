@@ -179,6 +179,11 @@ class ActiveProfileNotifier extends StateNotifier<AsyncValue<BusinessProfile?>> 
   }
 }
 
+/// The active shop's id, for providers that query its rows: unlike watching
+/// [activeProfileProvider], a changed setting does not reload them.
+final activeProfileIdProvider =
+    Provider<String?>((ref) => ref.watch(activeProfileProvider).value?.id);
+
 // ── Role ───────────────────────────────────────────────
 enum ShopRole { owner, staff }
 

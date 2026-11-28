@@ -121,18 +121,20 @@ Future<void> _addToCart(BuildContext context, WidgetRef ref, Product product) as
   if (variants.isNotEmpty) {
     variant = await showModalBottomSheet<ProductVariant>(
       context: context,
-      builder: (_) => _VariantPicker(
-        product: product,
-        variants: variants,
-        allowOversell: ref.read(activeProfileProvider).value?.allowOversell ?? false,
-      ),
+      builder: (_) => _VariantPicker(product: product, variants: variants),
     );
-    if (variant == null) return;
+    if (variant == null || !context.mounted) return;
+    // A sync can have changed the product while the picker was open.
+    product = _current(ref.read(posProductListProvider).value, product);
   }
   if (!ref.read(cartProvider).addItem(product, variant: variant) && context.mounted) {
     _showMessage(context, 'No more stock for ${product.name}');
   }
 }
+
+/// [product] as [products] now has it, or unchanged if it is not listed.
+Product _current(List<Product>? products, Product product) =>
+    products?.where((p) => p.id == product.id).firstOrNull ?? product;
 
 void _showMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
@@ -140,15 +142,19 @@ void _showMessage(BuildContext context, String message) {
     ..showSnackBar(SnackBar(content: Text(message), backgroundColor: context.colors.error));
 }
 
-class _VariantPicker extends StatelessWidget {
+/// Watches the product and its variants, so it stays current while open.
+class _VariantPicker extends ConsumerWidget {
   final Product product;
+  /// Shown until the watched variants are read.
   final List<ProductVariant> variants;
-  final bool allowOversell;
-  const _VariantPicker(
-      {required this.product, required this.variants, required this.allowOversell});
+  const _VariantPicker({required this.product, required this.variants});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = _current(ref.watch(posProductListProvider).value, product);
+    final shown = ref.watch(variantsProvider(product.id)).value ?? variants;
+    final allowOversell =
+        ref.watch(activeProfileProvider).value?.allowOversell ?? false;
     return SafeArea(
       child: ListView(
         shrinkWrap: true,
@@ -156,12 +162,12 @@ class _VariantPicker extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-            child: Text(product.name,
+            child: Text(current.name,
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w700,
                     color: context.colors.textPrimary)),
           ),
-          for (final v in variants)
+          for (final v in shown)
             ListTile(
               enabled: allowOversell || v.stockQty > 0,
               title: Text(v.displayName.isEmpty ? 'Variant' : v.displayName),
