@@ -7,6 +7,7 @@ import '../../../core/models/product_variant.dart';
 import '../../../core/models/sale.dart';
 import '../../../core/models/sale_item.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/providers/watch_tables.dart';
 import '../../inventory/providers/inventory_providers.dart';
 
 /// A single item in the POS cart.
@@ -145,22 +146,25 @@ final cartProvider = ChangeNotifierProvider((ref) {
 
 // ── Today's total (minor units) ────────────────────────
 final todayTotalProvider = FutureProvider<int>((ref) async {
-  final profile = ref.watch(activeProfileProvider).value;
-  if (profile == null) return 0;
-  return ref.read(saleDaoProvider).getTodayTotalMinor(profile.id);
+  watchTables(ref, {'sale'});
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return 0;
+  return ref.read(saleDaoProvider).getTodayTotalMinor(profileId);
 });
 
 // ── Recent sales ───────────────────────────────────────
 final recentSalesProvider = FutureProvider<List<Sale>>((ref) async {
-  final profile = ref.watch(activeProfileProvider).value;
-  if (profile == null) return [];
-  return ref.read(saleDaoProvider).getByProfile(profile.id, limit: 50);
+  watchTables(ref, {'sale'});
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return [];
+  return ref.read(saleDaoProvider).getByProfile(profileId, limit: 50);
 });
 
 /// Line items of one sale, from the local DB (so it works offline and for
 /// sales synced from another device). Cost prices are for the owner only: for
 /// staff they are zeroed here, so no screen can show them.
 final saleItemsProvider = FutureProvider.family<List<SaleItem>, String>((ref, saleId) async {
+  watchTables(ref, {'sale_item'});
   final items = await ref.read(saleItemDaoProvider).getBySale(saleId);
   if (ref.watch(isOwnerProvider)) return items;
   return [for (final i in items) i.copyWith(costPriceMinor: 0)];
