@@ -232,6 +232,64 @@ void main() {
       expect(await stockOf(plain.id), 4);
     });
 
+    // In a shop with variant support the form always passes a variant list,
+    // empty for a product without variants (#47).
+    test('saving a product without variants records only a real stock change', () async {
+      Future<List<(StockMovementReason, int)>> ledger() async =>
+          [for (final m in await movements(plain.id)) (m.reason, m.delta)];
+
+      await ProductDao().saveWithVariants(plain.copyWith(name: 'Laces v2'), isNew: false, variants: []);
+
+      expect(await ledger(), [(StockMovementReason.initial, 10)]);
+      expect(await stockOf(plain.id), 10);
+
+      await ProductDao().saveWithVariants(plain.copyWith(stockQty: 7), isNew: false, variants: []);
+
+      expect(await ledger(), [(StockMovementReason.initial, 10), (StockMovementReason.correction, -3)]);
+      expect(await stockOf(plain.id), 7);
+    });
+
+    test('a new product with an empty variant list gets one initial movement', () async {
+      await ProductDao().saveWithVariants(plain.copyWith(id: 'new'), isNew: true, variants: []);
+
+      expect((await movements('new')).map((m) => (m.reason, m.delta)), [(StockMovementReason.initial, 10)]);
+      expect(await stockOf('new'), 10);
+    });
+
+    test("adding a first variant records only the variant's stock", () async {
+      const first = ProductVariant(id: 'variant-2', productId: 'product-2', profileId: 'profile-1', size: 'L', stockQty: 3);
+
+      await ProductDao().saveWithVariants(plain, isNew: false, variants: [first]);
+
+      expect((await movements(plain.id)).map((m) => (m.reason, m.delta, m.variantId)), [
+        (StockMovementReason.initial, 10, null),
+        (StockMovementReason.initial, 3, first.id),
+      ]);
+      expect(await stockOf(plain.id), 3);
+    });
+
+    test('a first variant with no stock leaves the product at 0', () async {
+      const first = ProductVariant(id: 'variant-2', productId: 'product-2', profileId: 'profile-1', size: 'L');
+
+      await ProductDao().saveWithVariants(plain, isNew: false, variants: [first]);
+
+      expect(await movements(plain.id), hasLength(1));
+      expect(await stockOf(plain.id), 0);
+    });
+
+    test('saving a product with variants records only the changed difference', () async {
+      await ProductDao().saveWithVariants(product.copyWith(name: 'Sneaker v2'), isNew: false, variants: [variant]);
+
+      expect(await movements(product.id), hasLength(1));
+      expect(await stockOf(product.id), 5);
+
+      await ProductDao().saveWithVariants(product, isNew: false, variants: [variant.copyWith(stockQty: 8)]);
+
+      expect((await movements(product.id)).skip(1).map((m) => (m.reason, m.delta, m.variantId)),
+          [(StockMovementReason.correction, 3, variant.id)]);
+      expect(await stockOf(product.id), 8);
+    });
+
     test('a restock adds to the stock', () async {
       await StockMovementDao().record(
           profileId: profile.id, productId: product.id, variantId: variant.id, delta: 3, reason: StockMovementReason.restock);
