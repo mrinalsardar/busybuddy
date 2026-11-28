@@ -20,13 +20,14 @@ class CartItem {
   /// price and can be changed at the counter.
   int unitPriceMinor;
 
+  /// Current stock on hand. Checkout re-checks it in the DB.
+  int available;
+
   CartItem({required this.product, this.variant, this.qty = 1})
-      : unitPriceMinor = product.priceMinor;
+      : unitPriceMinor = product.priceMinor,
+        available = variant?.stockQty ?? product.stockQty;
 
   int get lineTotalMinor => qty * unitPriceMinor;
-
-  /// Stock on hand when the item was added. Checkout re-checks it in the DB.
-  int get available => variant?.stockQty ?? product.stockQty;
 
   String get displayName {
     if (variant != null && variant!.displayName.isNotEmpty) {
@@ -97,18 +98,30 @@ class CartNotifier extends ChangeNotifier {
   }
 
   /// Sets a line's quantity; 0 or less removes it. Returns false (and changes
-  /// nothing) if [qty] exceeds the stock on hand and oversells aren't allowed.
+  /// nothing) if raising it to [qty] exceeds the stock on hand and oversells
+  /// aren't allowed.
   bool updateQty(String cartKey, int qty) {
     final idx = _items.indexWhere((i) => i.cartKey == cartKey);
     if (idx < 0) return true;
     if (qty <= 0) {
       _items.removeAt(idx);
     } else {
-      if (!_allowOversell() && qty > _items[idx].available) return false;
+      if (!_allowOversell() && qty > _items[idx].qty && qty > _items[idx].available) {
+        return false;
+      }
       _items[idx].qty = qty;
     }
     notifyListeners();
     return true;
+  }
+
+  /// Takes the current stock (by product or variant id) into the lines; one no
+  /// longer stored has none. Quantities and prices stay.
+  void updateStock(Map<String, int> stockById) {
+    for (final item in _items) {
+      item.available = stockById[item.variant?.id ?? item.product.id] ?? 0;
+    }
+    notifyListeners();
   }
 
   /// Sets the actual unit price of a line. Negative prices are ignored.
@@ -141,6 +154,10 @@ final cartProvider = ChangeNotifierProvider((ref) {
   final cart = CartNotifier(
       allowOversell: () => ref.read(activeProfileProvider).value?.allowOversell ?? false);
   ref.listen(authProvider, (_, _) => cart.clear());
+  ref.listen(stockQtyProvider, (_, next) {
+    final stock = next.value;
+    if (!next.isLoading && stock != null) cart.updateStock(stock);
+  });
   return cart;
 });
 

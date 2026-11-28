@@ -47,6 +47,7 @@ void invalidateProductViews(void Function(ProviderOrFamily) invalidate) {
   invalidate(categoryListProvider);
   invalidate(productByIdProvider);
   invalidate(variantsProvider);
+  invalidate(stockQtyProvider);
   invalidate(lowStockCountProvider);
   invalidate(avgSellingPriceProvider);
 }
@@ -82,6 +83,15 @@ final variantsProvider =
     FutureProvider.family<List<ProductVariant>, String>((ref, productId) async {
   watchTables(ref, {'product_variant'});
   return ref.read(productVariantDaoProvider).getByProduct(productId);
+});
+
+// ── Stock on hand ──────────────────────────────────────
+/// Product or variant id -> current stock.
+final stockQtyProvider = FutureProvider<Map<String, int>>((ref) async {
+  final profileId = ref.watch(activeProfileIdProvider);
+  if (profileId == null) return {};
+  watchTables(ref, {'product', 'product_variant'});
+  return ref.read(productDaoProvider).getStockQtys(profileId);
 });
 
 // ── Low-stock count ────────────────────────────────────

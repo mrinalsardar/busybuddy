@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:busybuddy/core/dao/daos.dart';
 import 'package:busybuddy/core/db/database_helper.dart';
+import 'package:busybuddy/core/images/image_providers.dart';
+import 'package:busybuddy/core/images/product_image_store.dart';
 import 'package:busybuddy/core/models/models.dart';
 import 'package:busybuddy/core/providers/core_providers.dart';
 import 'package:busybuddy/core/theme/app_theme.dart';
@@ -10,8 +15,10 @@ import 'package:busybuddy/features/sales/providers/sales_providers.dart';
 import 'package:busybuddy/features/sales/screens/pos_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
 
 import 'test_db.dart';
@@ -44,9 +51,30 @@ Future<void> _synced(WidgetTester tester, String sql) async {
   await _settle(tester);
 }
 
-Future<void> _pump(WidgetTester tester, Widget screen, {BusinessProfile shop = _shop}) async {
+/// A picture store whose save stays pending until the test ends it.
+class _SlowImageStore implements ProductImageStore {
+  final pending = Completer<String>();
+
+  @override
+  Future<String> save(String profileId, String productId, Uint8List jpeg) => pending.future;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FixedPicker implements ProductImagePicker {
+  _FixedPicker(this.bytes);
+  final Uint8List bytes;
+
+  @override
+  Future<Uint8List?> pick(ImagePickSource source) async => bytes;
+}
+
+Future<void> _pump(WidgetTester tester, Widget screen,
+    {BusinessProfile shop = _shop, List<Override> overrides = const []}) async {
   await tester.pumpWidget(ProviderScope(
     overrides: [
+      ...overrides,
       activeProfileProvider.overrideWith((ref) => _FakeProfile(shop)),
       isOwnerProvider.overrideWithValue(true),
     ],
@@ -88,6 +116,10 @@ void main() {
   Future<void> addProduct(WidgetTester tester, String id, String name, {int stock = 10}) =>
       tester.runAsync(() => ProductDao()
           .insert(Product(id: id, profileId: 'shop-1', name: name, priceMinor: 500, stockQty: stock)));
+
+  List<String> column(WidgetTester tester, String hint) => [
+        for (final f in tester.widgetList<TextField>(_fieldWith(hint))) f.controller!.text,
+      ];
 
   _screenTest('Inventory keeps its scroll position and search through a synced change',
       (tester) async {
@@ -182,14 +214,152 @@ void main() {
         "INSERT INTO product_variant (id, product_id, profile_id, size, stock_qty) "
         "VALUES ('v4', 'p1', 'shop-1', '44', 4)");
 
-    List<String> column(String hint) => [
-          for (final f in tester.widgetList<TextField>(_fieldWith(hint))) f.controller!.text,
-        ];
-    expect(column('Size'), ['39', '44']);
-    expect(column('Qty'), ['9', '4']);
+    expect(column(tester, 'Size'), ['39', '44']);
+    expect(column(tester, 'Qty'), ['9', '4']);
   });
 
-  _screenTest('the open variant picker shows synced stock, and the cart is left alone',
+  Future<void> addVariants(WidgetTester tester, List<(String, String)> sizes) =>
+      tester.runAsync(() async {
+        for (final (id, size) in sizes) {
+          await ProductVariantDao().insert(ProductVariant(
+              id: id, productId: 'p1', profileId: 'shop-1', size: size, stockQty: 2));
+        }
+      });
+
+  Future<void> tapUpdate(WidgetTester tester) async {
+    // A snack bar would cover the button.
+    tester.state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger)).removeCurrentSnackBar();
+    await tester.pump();
+    await tester.ensureVisible(find.text('Update Product'));
+    await tester.pump();
+    await tester.tap(find.text('Update Product'));
+    await _settle(tester);
+    // A successful save also runs the route transition.
+    await _settle(tester);
+  }
+
+  _screenTest('a variant deleted by sync leaves the form even if edited, and Save keeps it deleted',
+      (tester) async {
+    await addProduct(tester, 'p1', 'Shoe', stock: 0);
+    await addVariants(tester, [('v1', '40'), ('v2', '41')]);
+    await _pump(tester, const ProductFormScreen(productId: 'p1'));
+    await tester.enterText(_fieldWith('Size').at(1), '43');
+    Future<int> v2Movements() => _db(
+        tester,
+        () async => (await (await DatabaseHelper().database)
+                .getAll("SELECT * FROM stock_movement WHERE variant_id = 'v2'"))
+            .length);
+    final movementsBefore = await v2Movements();
+
+    await _synced(tester, "DELETE FROM product_variant WHERE id = 'v2'");
+
+    expect(column(tester, 'Size'), ['40']);
+    expect(find.text('A variant you edited was deleted elsewhere and removed'), findsOneWidget);
+    await tapUpdate(tester);
+    expect(find.byType(ProductFormScreen), findsNothing);
+    final stored = await _db(tester, () => ProductVariantDao().getByProduct('p1'));
+    expect(stored.map((v) => v.id), ['v1']);
+    expect(await v2Movements(), movementsBefore);
+  });
+
+  _screenTest('a variant that a sync removes and brings back returns to the form', (tester) async {
+    await addProduct(tester, 'p1', 'Shoe', stock: 0);
+    await addVariants(tester, [('v1', '40'), ('v2', '41')]);
+    await _pump(tester, const ProductFormScreen(productId: 'p1'));
+    await _synced(tester, "DELETE FROM product_variant WHERE id = 'v2'");
+    expect(column(tester, 'Size'), ['40']);
+    expect(find.byType(SnackBar), findsNothing);
+
+    await _synced(tester,
+        "INSERT INTO product_variant (id, product_id, profile_id, size, stock_qty) "
+        "VALUES ('v2', 'p1', 'shop-1', '41', 2)");
+
+    expect(column(tester, 'Size'), ['40', '41']);
+    await tapUpdate(tester);
+    expect(find.byType(ProductFormScreen), findsNothing);
+    final stored = await _db(tester, () => ProductVariantDao().getByProduct('p1'));
+    expect(stored.map((v) => v.id), unorderedEquals(['v1', 'v2']));
+  });
+
+  for (final pictureFails in [true, false]) {
+    _screenTest(
+        'values synced while the picture saves are kept when it '
+        '${pictureFails ? 'fails and Save is retried' : 'succeeds'}', (tester) async {
+      await addProduct(tester, 'p1', 'Old name');
+      final store = _SlowImageStore();
+      final picture = img.encodeJpg(img.Image(width: 8, height: 8));
+      await _pump(tester, const ProductFormScreen(productId: 'p1'),
+          shop: const BusinessProfile(id: 'shop-1', name: 'Shop', type: BusinessType.general),
+          overrides: [
+            productImageStoreProvider.overrideWithValue(store),
+            productImagePickerProvider.overrideWithValue(_FixedPicker(picture)),
+          ]);
+      await tester.tap(find.text('Gallery'));
+      await _settle(tester);
+      await tapUpdate(tester);
+
+      await _synced(tester, "UPDATE product SET name = 'New name', stock_qty = 7 WHERE id = 'p1'");
+      if (pictureFails) {
+        store.pending.completeError(StateError('disk full'));
+        await _settle(tester);
+        await tester.ensureVisible(find.text('Remove'));
+        await tester.pump();
+        await tester.tap(find.text('Remove'));
+        await tester.pump();
+        await tapUpdate(tester);
+      } else {
+        store.pending.complete('shop-1/p1/new.jpg');
+        await _settle(tester);
+        await _settle(tester);
+      }
+
+      expect(find.byType(ProductFormScreen), findsNothing);
+      final saved = await _db(tester, () => ProductDao().getById('p1'));
+      expect(saved!.name, 'New name');
+      expect(saved.stockQty, 7);
+      expect(saved.imagePath, pictureFails ? isNull : 'shop-1/p1/new.jpg');
+    });
+  }
+
+  _screenTest('open cart lines limit quantity by the synced stock and keep the rest',
+      (tester) async {
+    await addProduct(tester, 'p1', 'Shoe', stock: 0);
+    await addProduct(tester, 'p2', 'Belt', stock: 1);
+    await addVariants(tester, [('v1', '40')]);
+    await _pump(tester, const PosScreen());
+    final cart = ProviderScope.containerOf(tester.element(find.byType(PosScreen))).read(cartProvider);
+    await tester.tap(find.text('Belt'));
+    await _settle(tester);
+    await tester.tap(find.text('Shoe'));
+    await _settle(tester);
+    await tester.tap(find.text('40'));
+    await _settle(tester);
+    expect(cart.updateQty('p1_v1', 2), isTrue);
+    expect(cart.updateQty('p1_v1', 3), isFalse);
+
+    await _synced(tester, "UPDATE product_variant SET stock_qty = 8 WHERE id = 'v1'");
+    await _synced(tester,
+        "UPDATE product SET name = 'Strap', price_minor = 900, stock_qty = 3 WHERE id = 'p2'");
+
+    await tester.tap(find.byIcon(Icons.add).at(1));
+    await _settle(tester);
+    await tester.tap(find.text('Strap'));
+    await _settle(tester);
+    expect([for (final i in cart.items) i.qty], [2, 3]);
+    expect(cart.items.first.product.name, 'Belt');
+    expect(cart.items.first.unitPriceMinor, 500);
+
+    await _synced(tester, "UPDATE product_variant SET stock_qty = 1 WHERE id = 'v1'");
+    expect(cart.items.last.qty, 3);
+    await tester.tap(find.byIcon(Icons.add).at(1));
+    await tester.pump();
+    expect(find.text('Only 1 in stock'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.remove).at(1));
+    await tester.pump();
+    expect(cart.items.last.qty, 2);
+  });
+
+  _screenTest('the open variant picker shows synced stock, and the cart price is left alone',
       (tester) async {
     await addProduct(tester, 'p1', 'Shoe', stock: 0);
     await addProduct(tester, 'p2', 'Belt');

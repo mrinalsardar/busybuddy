@@ -104,12 +104,18 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   void _followStored(String id) {
     ref.listenManual(productByIdProvider(id), (_, next) {
       final p = next.value;
-      if (!next.isLoading && p != null && !_saving) setState(() => _mergeProduct(p));
+      if (!next.isLoading && p != null) setState(() => _mergeProduct(p));
     }, fireImmediately: true);
     if (!_showVariants) return;
     ref.listenManual(variantsProvider(id), (_, next) {
       final variants = next.value;
-      if (!next.isLoading && variants != null && !_saving) setState(() => _mergeVariants(variants));
+      if (next.isLoading || variants == null) return;
+      var droppedEdit = false;
+      setState(() => droppedEdit = _mergeVariants(variants));
+      if (droppedEdit) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('A variant you edited was deleted elsewhere and removed')));
+      }
     }, fireImmediately: true);
   }
 
@@ -127,7 +133,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _existing = p;
   }
 
-  void _mergeVariants(List<ProductVariant> variants) {
+  /// Returns true if it removed a row the user had edited.
+  bool _mergeVariants(List<ProductVariant> variants) {
+    var droppedEdit = false;
     final stored = {for (final v in variants) v.id: v};
     for (final entry in [..._variants]) {
       final before = entry.original;
@@ -138,14 +146,20 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         _follow(entry.colorCtrl, before.color ?? '', v.color ?? '');
         _follow(entry.stockCtrl, '${before.stockQty}', '${v.stockQty}');
         entry.original = v;
-      } else if (entry.matches(before)) {
-        // Deleted elsewhere. An edited row stays, and saving adds it again.
+      } else {
+        // Deleted elsewhere, so it can be shown again if it comes back.
+        if (!entry.matches(before)) droppedEdit = true;
+        _storedVariantIds.remove(entry.id);
         _removeVariant(entry);
       }
     }
     for (final v in variants) {
-      if (_storedVariantIds.add(v.id)) _variants.add(_VariantEntry.stored(v));
+      // This form's own save stores its new rows, which are already shown.
+      if (_storedVariantIds.add(v.id) && !_variants.any((e) => e.id == v.id)) {
+        _variants.add(_VariantEntry.stored(v));
+      }
     }
+    return droppedEdit;
   }
 
   /// Takes a new stored value into a field that still shows the old one.
@@ -184,11 +198,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final id = _existing?.id ?? const Uuid().v4();
     final now = DateTime.now();
 
-    final oldImagePath = _existing?.imagePath;
-    var imagePath = _removeImage ? null : oldImagePath;
+    String? newImagePath;
     if (_newImage != null) {
       try {
-        imagePath = await ref.read(productImageStoreProvider).save(profile.id, id, _newImage!);
+        newImagePath = await ref.read(productImageStoreProvider).save(profile.id, id, _newImage!);
       } catch (e) {
         if (!mounted) return;
         setState(() => _saving = false);
@@ -196,6 +209,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         return;
       }
     }
+
+    // Read after the await: a sync can change the stored product during it.
+    final oldImagePath = _existing?.imagePath;
+    final imagePath = newImagePath ?? (_removeImage ? null : oldImagePath);
 
     final product = Product(
       id: id,
@@ -234,7 +251,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       await dao.saveWithVariants(product, isNew: !_isEdit, variants: variants);
     } catch (e) {
       // Not saved: the new picture file is not wanted.
-      if (_newImage != null) await _store.deleteLocal(imagePath!);
+      if (newImagePath != null) await _store.deleteLocal(newImagePath);
       if (!mounted) return;
       setState(() => _saving = false);
       _showError(e is DuplicateCodeException ? e.message : 'Could not save product: $e');
